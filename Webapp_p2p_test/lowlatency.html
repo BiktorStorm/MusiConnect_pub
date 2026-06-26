@@ -395,9 +395,13 @@ async function setup() {
   // INSERTABLE STREAMS: Intercept incoming audio BEFORE default decode/playout
   // =========================================================================
   pc.ontrack = (event) => {
+    const receiver = event.receiver;
+    // Guard: only attach the transform once per receiver
+    if (receiver._transformAttached) return;
+    receiver._transformAttached = true;
+
     log('Remote track received — attaching Insertable Streams transform');
 
-    const receiver = event.receiver;
     // Get the readable stream of encoded (Opus) frames from WebRTC
     const receiverStreams = receiver.createEncodedStreams();
     const readable = receiverStreams.readable;
