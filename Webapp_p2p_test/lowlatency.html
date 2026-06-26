@@ -272,7 +272,7 @@ function shouldPlayFrame(age, bufferLevel) {
 
 let firstFrameTime = null;  // Used to estimate frame age
 
-function handleEncodedFrame(encodedFrame, controller) {
+function handleEncodedFrame(encodedFrame) {
   pipelineStats.received++;
   flashStage('viz-receive');
 
@@ -306,10 +306,6 @@ function handleEncodedFrame(encodedFrame, controller) {
     flashStage('viz-decide', false);
     pipelineStats.dropped++;
   }
-
-  // Don't pass to controller — we're handling decode ourselves.
-  // (Not calling controller.enqueue() bypasses the default WebRTC decode path)
-  encodedFrame.close();
 }
 
 // =============================================================================
@@ -407,13 +403,17 @@ async function setup() {
     const readable = receiverStreams.readable;
     const writable = receiverStreams.writable;
 
-    // Pipe through our transform — each frame goes to handleEncodedFrame()
-    const transform = new TransformStream({
-      transform: handleEncodedFrame
-    });
+    // Read each encoded frame and route it through our custom pipeline.
+    // We use a WritableStream as a sink — we handle decoding ourselves via WebCodecs,
+    // so we don't feed frames back into WebRTC's internal decoder.
+    readable.pipeTo(new WritableStream({
+      write(encodedFrame) {
+        handleEncodedFrame(encodedFrame);
+      }
+    })).catch(err => log(`Stream error: ${err.message}`));
 
-    // Connect: readable (from WebRTC) → our transform → writable (we consume everything)
-    readable.pipeThrough(transform).pipeTo(writable);
+    // Close the writable end — we don't want WebRTC's internal decoder to play anything
+    writable.close().catch(() => {});
   };
 }
 
