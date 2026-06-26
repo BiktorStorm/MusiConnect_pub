@@ -69,6 +69,9 @@
     </label>
   </div>
 
+  <!-- Hidden audio element — used as a bridge for WebRTC audio into Web Audio API -->
+  <audio id="remoteAudio" autoplay></audio>
+
   <button id="startBtn" disabled>Join & Start Microphone</button>
   <div id="stats">Waiting for connection...</div>
   <div id="log"></div>
@@ -132,24 +135,34 @@ let remoteStream = null;
 let sourceNode = null;
 
 // Two paths: custom worklet (low latency) or bypass (browser default, for comparison)
+let elementSourceCreated = false;
+
 function connectAudio() {
   if (!remoteStream || !audioCtx) return;
 
-  // Disconnect existing
-  if (sourceNode) { sourceNode.disconnect(); }
-
-  // Create source from the remote WebRTC stream
-  sourceNode = audioCtx.createMediaStreamSource(remoteStream);
+  const audioEl = document.getElementById('remoteAudio');
+  audioEl.srcObject = remoteStream;
+  audioEl.play().catch(() => {});
 
   if (bypassToggle.checked) {
-    // BYPASS: connect directly to speakers (browser default buffering)
-    sourceNode.connect(audioCtx.destination);
-    log('Audio routed DIRECTLY to speakers (browser default latency)');
+    // BYPASS: let the <audio> element play directly (browser default latency)
+    audioEl.muted = false;
+    if (sourceNode) sourceNode.disconnect();
+    log('Audio: <audio> element direct playback (browser default latency)');
   } else {
-    // CUSTOM: route through our AudioWorklet with minimal buffer
+    // CUSTOM: route through our AudioWorklet for buffer control
+    audioEl.muted = true;
+
+    // createMediaElementSource can only be called once per element
+    if (!elementSourceCreated) {
+      sourceNode = audioCtx.createMediaElementSource(audioEl);
+      elementSourceCreated = true;
+    } else {
+      sourceNode.disconnect();
+    }
     sourceNode.connect(workletNode);
     workletNode.connect(audioCtx.destination);
-    log('Audio routed through custom low-latency buffer');
+    log('Audio: routed through custom low-latency buffer');
   }
 }
 
