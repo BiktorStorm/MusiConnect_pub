@@ -158,6 +158,18 @@ async function createPeerConnection() {
   };
 
   // =========================================================================
+  // DATA CHANNEL: Used for latency measurement (ping/pong).
+  // A data channel is a P2P messaging pipe — same direct connection as audio,
+  // but for arbitrary data. Perfect for measuring round-trip time.
+  // =========================================================================
+  setupDataChannel(pc.createDataChannel('latency'));
+
+  // If the OTHER peer created the data channel, we receive it here
+  pc.ondatachannel = (event) => {
+    setupDataChannel(event.channel);
+  };
+
+  // =========================================================================
   // Connection state changes — for debugging/UI
   // =========================================================================
   pc.onconnectionstatechange = () => {
@@ -165,6 +177,8 @@ async function createPeerConnection() {
     if (pc.connectionState === 'connected') {
       log('🎵 P2P CONNECTED — audio is flowing directly between browsers!');
       log('   (The signaling server is no longer needed)');
+      // Start measuring latency once connected
+      startLatencyMeasurement();
     }
   };
 
@@ -176,6 +190,67 @@ async function createPeerConnection() {
     log('Receiving remote audio stream');
     document.getElementById('remoteAudio').srcObject = event.streams[0];
   };
+}
+
+// =============================================================================
+// LATENCY MEASUREMENT
+// =============================================================================
+// How it works:
+//   1. Peer A sends a "ping" message with a timestamp via the data channel
+//   2. Peer B receives it and immediately sends back a "pong" with the same timestamp
+//   3. Peer A calculates: RTT = now - original_timestamp
+//   4. One-way network latency ≈ RTT / 2
+//   5. Estimated audio latency = network RTT/2 + ~60ms (browser audio pipeline)
+//
+// This measures network latency only. Total mic-to-speaker latency also includes:
+//   - Mic capture buffer (~10ms)
+//   - Opus frame encoding (~20ms)
+//   - Jitter buffer on receiver (~20-40ms)
+//   - Playback buffer (~10ms)
+// =============================================================================
+
+let dataChannel = null;
+let latencyInterval = null;
+
+function setupDataChannel(channel) {
+  dataChannel = channel;
+
+  dataChannel.onopen = () => {
+    log('Data channel open (used for latency measurement)');
+  };
+
+  dataChannel.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    if (msg.type === 'ping') {
+      // Immediately echo back — don't do any processing to keep measurement accurate
+      dataChannel.send(JSON.stringify({ type: 'pong', timestamp: msg.timestamp }));
+    }
+
+    if (msg.type === 'pong') {
+      // Calculate round-trip time
+      const rtt = performance.now() - msg.timestamp;
+      const networkOneWay = rtt / 2;
+      // Browser audio pipeline adds roughly:
+      // - Capture + encode: ~20-30ms
+      // - Decode + playout: ~20-30ms
+      const estimatedAudioLatency = networkOneWay + 60;
+
+      log(`📊 Latency: RTT=${rtt.toFixed(1)}ms | Network one-way=${networkOneWay.toFixed(1)}ms | Est. audio=${estimatedAudioLatency.toFixed(1)}ms`);
+    }
+  };
+}
+
+function startLatencyMeasurement() {
+  // Measure every 2 seconds
+  latencyInterval = setInterval(() => {
+    if (dataChannel && dataChannel.readyState === 'open') {
+      dataChannel.send(JSON.stringify({
+        type: 'ping',
+        timestamp: performance.now()
+      }));
+    }
+  }, 2000);
 }
 
 // =============================================================================
