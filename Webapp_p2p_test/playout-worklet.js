@@ -1,45 +1,51 @@
 // =============================================================================
-// PLAYOUT WORKLET — Runs in the audio thread, outputs samples to speakers.
+// PLAYOUT WORKLET — Minimal ring buffer between WebRTC decode and speakers.
 //
-// This replaces the browser's default playout buffer with one YOU control.
-// The browser calls process() every ~2.7ms asking for 128 samples.
-// We pull from a ring buffer that the main thread fills with decoded PCM.
+// WHAT THIS DOES:
+// Audio comes in from the WebRTC MediaStreamSource (via the AudioWorkletNode input).
+// We buffer it in a ring buffer of configurable size, then output it.
 //
-// KEY CONCEPT:
-// - The ring buffer size IS your playout latency.
-//   Smaller buffer = lower latency but more risk of underrun (glitches).
-//   Larger buffer = smoother but adds delay.
+// WHY:
+// The browser's default playout path has hidden buffers (~50-100ms).
+// By routing through this worklet, we control exactly how much audio is buffered.
+// Less buffer = lower latency (but more risk of glitches if network hiccups).
+//
+// BUFFER OVERFLOW (too much data):
+//   → Drop oldest samples. This keeps latency constant.
+//     (Alternative: skip the new samples — but that increases latency.)
+//
+// BUFFER UNDERRUN (no data available):
+//   → Output silence. This causes a brief glitch but doesn't add delay.
+//     (Alternative: stretch previous audio — but that adds complexity.)
 // =============================================================================
 
 class PlayoutProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
 
-    // --- CONFIGURABLE BUFFER ---
-    // Buffer size in samples. At 48kHz:
-    //   480 samples  = 10ms  (aggressive, may glitch)
-    //   960 samples  = 20ms  (good for LAN)
-    //   2400 samples = 50ms  (safe for internet)
-    //   4800 samples = 100ms (very safe, high latency)
-    this.bufferSize = options.processorOptions?.bufferSize || 960;  // default 20ms
+    // --- CONFIGURABLE BUFFER SIZE ---
+    // This is the ONLY latency you're adding in this stage.
+    // At 48kHz:
+    //   128 samples  = 2.7ms  (almost nothing — will glitch constantly)
+    //   480 samples  = 10ms   (aggressive)
+    //   960 samples  = 20ms   (matches one Opus frame — good default)
+    //   2400 samples = 50ms   (comfortable)
+    //   4800 samples = 100ms  (very safe, but defeats the purpose)
+    this.bufferSize = options.processorOptions?.bufferSize || 960;
 
-    // Ring buffer: stores PCM samples waiting to be played
     this.buffer = new Float32Array(this.bufferSize);
-    this.writePos = 0;   // Where new samples are written
-    this.readPos = 0;    // Where we read from for playback
-    this.buffered = 0;   // How many samples are currently waiting
+    this.writePos = 0;
+    this.readPos = 0;
+    this.buffered = 0;
 
-    // Stats for visualization
     this.totalPlayed = 0;
-    this.totalUnderruns = 0;  // Times we had nothing to play (glitches)
+    this.totalUnderruns = 0;
+    this.totalOverflows = 0;
 
-    // Listen for PCM data from the main thread
+    // Handle messages from main thread (resize, stats requests)
     this.port.onmessage = (event) => {
-      if (event.data.type === 'samples') {
-        this.enqueueSamples(event.data.samples);
-      }
       if (event.data.type === 'resize') {
-        // Allow runtime buffer size changes
+        // Resize buffer at runtime — allows you to experiment without reloading
         this.bufferSize = event.data.bufferSize;
         this.buffer = new Float32Array(this.bufferSize);
         this.writePos = 0;
@@ -54,48 +60,52 @@ class PlayoutProcessor extends AudioWorkletProcessor {
           bufferSize: this.bufferSize,
           totalPlayed: this.totalPlayed,
           totalUnderruns: this.totalUnderruns,
+          totalOverflows: this.totalOverflows,
           fillPercent: Math.round((this.buffered / this.bufferSize) * 100)
         });
       }
     };
   }
 
-  // Write incoming PCM samples into the ring buffer
-  enqueueSamples(samples) {
-    for (let i = 0; i < samples.length; i++) {
-      if (this.buffered >= this.bufferSize) {
-        // Buffer full — DROP oldest samples to stay low-latency.
-        // This is the "drop over buffer" philosophy:
-        // we'd rather lose old audio than accumulate delay.
-        this.readPos = (this.readPos + 1) % this.bufferSize;
-        this.buffered--;
+  // Called every ~2.7ms by the browser audio thread.
+  // inputs[0][0] = samples from the WebRTC MediaStreamSource
+  // outputs[0][0] = samples to send to speakers
+  process(inputs, outputs) {
+    const input = inputs[0]?.[0];   // Incoming audio (from WebRTC decode)
+    const output = outputs[0][0];   // Outgoing audio (to speakers)
+
+    // --- WRITE incoming samples into the ring buffer ---
+    if (input) {
+      for (let i = 0; i < input.length; i++) {
+        if (this.buffered >= this.bufferSize) {
+          // OVERFLOW: buffer is full. Drop the OLDEST sample to make room.
+          // This keeps our latency from growing — we always stay at bufferSize.
+          this.readPos = (this.readPos + 1) % this.bufferSize;
+          this.buffered--;
+          this.totalOverflows++;
+        }
+        this.buffer[this.writePos] = input[i];
+        this.writePos = (this.writePos + 1) % this.bufferSize;
+        this.buffered++;
       }
-      this.buffer[this.writePos] = samples[i];
-      this.writePos = (this.writePos + 1) % this.bufferSize;
-      this.buffered++;
     }
-  }
 
-  // Called by the browser every ~2.7ms — fill the output with 128 samples
-  process(inputs, outputs, parameters) {
-    const output = outputs[0][0]; // mono output channel
-
+    // --- READ from the ring buffer into the output ---
     for (let i = 0; i < output.length; i++) {
       if (this.buffered > 0) {
-        // We have data — play it
         output[i] = this.buffer[this.readPos];
         this.readPos = (this.readPos + 1) % this.bufferSize;
         this.buffered--;
         this.totalPlayed++;
       } else {
-        // UNDERRUN: no data available. Output silence.
-        // This is a glitch — it means packets aren't arriving fast enough.
+        // UNDERRUN: nothing to play. Output silence.
+        // You'll hear this as a tiny click or gap.
         output[i] = 0;
         this.totalUnderruns++;
       }
     }
 
-    return true; // Keep the processor alive
+    return true; // Keep processor alive
   }
 }
 
