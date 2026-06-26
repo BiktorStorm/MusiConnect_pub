@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MusiConnect – Low Latency Audio</title>
+  <style>
+    body { font-family: monospace; max-width: 800px; margin: 20px auto; padding: 0 20px; }
+    h2 { margin-bottom: 5px; }
+
+    /* Data flow visualization */
+    #pipeline { display: flex; align-items: center; gap: 4px; margin: 15px 0; flex-wrap: wrap; }
+    .stage { padding: 8px 12px; border-radius: 4px; text-align: center; font-size: 11px; }
+    .stage-active { background: #2d5a2d; color: #4f4; }
+    .stage-idle { background: #333; color: #888; }
+    .arrow { color: #888; font-size: 16px; }
+    .stage-label { display: block; font-weight: bold; margin-bottom: 2px; }
+    .stage-stat { display: block; font-size: 10px; opacity: 0.8; }
+
+    /* Controls */
+    #controls { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 4px; }
+    #controls label { display: block; margin: 8px 0 3px; font-weight: bold; }
+    #controls input[type=range] { width: 200px; vertical-align: middle; }
+    #controls span { font-size: 12px; color: #555; }
+
+    /* Buffer visualization */
+    #buffer-viz { margin: 15px 0; }
+    #buffer-bar { width: 100%; height: 24px; background: #222; border-radius: 3px; overflow: hidden; position: relative; }
+    #buffer-fill { height: 100%; background: #4caf50; transition: width 0.1s; }
+    #buffer-label { position: absolute; top: 4px; left: 8px; color: white; font-size: 11px; }
+
+    /* Log */
+    #log { white-space: pre-wrap; font-size: 11px; background: #1a1a1a; color: #0f0;
+           padding: 10px; height: 200px; overflow-y: auto; }
+    #stats { font-size: 12px; background: #111; color: #ccc; padding: 8px; margin: 5px 0; }
+
+    button { padding: 8px 16px; margin: 5px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>MusiConnect – Low Latency P2P Audio</h2>
+
+  <!-- ===== DATA FLOW VISUALIZATION ===== -->
+  <!-- Shows each stage of the pipeline and whether it's active -->
+  <div id="pipeline">
+    <div class="stage stage-idle" id="viz-receive">
+      <span class="stage-label">Receive</span>
+      <span class="stage-stat" id="viz-receive-stat">0 pkts</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="stage stage-idle" id="viz-decide">
+      <span class="stage-label">Drop/Play</span>
+      <span class="stage-stat" id="viz-decide-stat">—</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="stage stage-idle" id="viz-decode">
+      <span class="stage-label">Decode</span>
+      <span class="stage-stat" id="viz-decode-stat">0 frames</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="stage stage-idle" id="viz-buffer">
+      <span class="stage-label">Buffer</span>
+      <span class="stage-stat" id="viz-buffer-stat">0ms</span>
+    </div>
+    <span class="arrow">→</span>
+    <div class="stage stage-idle" id="viz-play">
+      <span class="stage-label">🔊 Play</span>
+      <span class="stage-stat" id="viz-play-stat">—</span>
+    </div>
+  </div>
+
+  <!-- ===== BUFFER FILL VISUALIZATION ===== -->
+  <div id="buffer-viz">
+    <div id="buffer-bar">
+      <div id="buffer-fill" style="width: 0%"></div>
+      <span id="buffer-label">Buffer: empty</span>
+    </div>
+  </div>
+
+  <!-- ===== CONFIGURABLE CONTROLS ===== -->
+  <div id="controls">
+    <label>Playout Buffer Size:
+      <input type="range" id="bufferSlider" min="128" max="9600" value="960" step="128">
+      <span id="bufferValue">960 samples (20.0ms)</span>
+    </label>
+    <span>↑ Drag to trade latency vs. stability. Lower = less delay, more glitches.</span>
+
+    <label>Max Packet Age (drop threshold):
+      <input type="range" id="dropSlider" min="5" max="200" value="60" step="5">
+      <span id="dropValue">60ms</span>
+    </label>
+    <span>↑ Packets older than this are DROPPED instead of played. Lower = tighter sync.</span>
+
+    <label>
+      <input type="checkbox" id="plcToggle" checked>
+      Packet Loss Concealment (fill gaps with synthesized audio instead of silence)
+    </label>
+  </div>
+
+  <button id="startBtn" disabled>Join & Start Microphone</button>
+
+  <!-- ===== STATS ===== -->
+  <div id="stats">Waiting for connection...</div>
+
+  <!-- ===== LOG ===== -->
+  <div id="log"></div>
+
+<script>
+// =============================================================================
+// LOW-LATENCY P2P AUDIO CLIENT
+// =============================================================================
+//
+// DATA FLOW:
+//
+// Remote peer's mic → WebRTC → Insertable Streams (intercept Opus frame)
+//   → Drop/Play decision (is it too old?)
+//   → Decode (Opus → PCM via WebCodecs)
+//   → AudioWorklet ring buffer (configurable size)
+//   → Speakers (every 2.7ms)
+//
+// YOU CAN MODIFY:
+//   1. Buffer size (slider) — controls playout latency
+//   2. Drop threshold (slider) — how late a packet can be before we discard it
+//   3. The decision logic in handleEncodedFrame() — add your own rules
+// =============================================================================
+
+const logEl = document.getElementById('log');
+const statsEl = document.getElementById('stats');
+const startBtn = document.getElementById('startBtn');
+
+function log(msg) {
+  const time = new Date().toLocaleTimeString();
+  logEl.textContent += `[${time}] ${msg}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// =============================================================================
+// PIPELINE STATS — tracks what's happening for visualization
+// =============================================================================
+const pipelineStats = {
+  received: 0,      // Total Opus packets received
+  dropped: 0,       // Packets dropped (too late)
+  decoded: 0,       // Packets decoded to PCM
+  underruns: 0,     // Buffer ran empty (glitches)
+  lastPacketAge: 0  // Age of most recent packet in ms
+};
+
+// =============================================================================
+// CONTROLS — read current slider values
+// =============================================================================
+const bufferSlider = document.getElementById('bufferSlider');
+const dropSlider = document.getElementById('dropSlider');
+const plcToggle = document.getElementById('plcToggle');
+
+bufferSlider.oninput = () => {
+  const samples = parseInt(bufferSlider.value);
+  const ms = (samples / 48000 * 1000).toFixed(1);
+  document.getElementById('bufferValue').textContent = `${samples} samples (${ms}ms)`;
+  // Tell the worklet to resize its buffer
+  if (workletNode) {
+    workletNode.port.postMessage({ type: 'resize', bufferSize: samples });
+    log(`Buffer resized to ${samples} samples (${ms}ms)`);
+  }
+};
+
+dropSlider.oninput = () => {
+  document.getElementById('dropValue').textContent = `${dropSlider.value}ms`;
+};
+
+function getDropThreshold() { return parseInt(dropSlider.value); }
+function getUsePLC() { return plcToggle.checked; }
+
+// =============================================================================
+// WEB AUDIO SETUP — AudioWorklet for minimal-latency playout
+// =============================================================================
+let audioCtx = null;
+let workletNode = null;
+
+async function setupAudioWorklet() {
+  audioCtx = new AudioContext({ sampleRate: 48000 });
+  await audioCtx.audioWorklet.addModule('playout-worklet.js');
+
+  workletNode = new AudioWorkletNode(audioCtx, 'playout-processor', {
+    processorOptions: { bufferSize: parseInt(bufferSlider.value) }
+  });
+
+  // Connect worklet output to speakers
+  workletNode.connect(audioCtx.destination);
+
+  // Receive stats from the worklet for visualization
+  workletNode.port.onmessage = (event) => {
+    if (event.data.type === 'stats') {
+      updateVisualization(event.data);
+    }
+  };
+
+  log('AudioWorklet ready — playout pipeline active');
+}
+
+// =============================================================================
+// WEBCODECS OPUS DECODER — manual decode gives us timing control
+// =============================================================================
+let audioDecoder = null;
+
+function setupDecoder() {
+  audioDecoder = new AudioDecoder({
+    output: (audioData) => {
+      // Decoded PCM arrived — send it to the worklet's ring buffer
+      const pcm = new Float32Array(audioData.numberOfFrames);
+      audioData.copyTo(pcm, { planeIndex: 0 });
+      workletNode.port.postMessage({ type: 'samples', samples: pcm });
+      audioData.close();
+
+      pipelineStats.decoded++;
+      flashStage('viz-decode');
+    },
+    error: (err) => {
+      log(`Decode error: ${err.message}`);
+    }
+  });
+
+  audioDecoder.configure({
+    codec: 'opus',
+    sampleRate: 48000,
+    numberOfChannels: 1
+  });
+
+  log('Opus decoder ready');
+}
+
+// =============================================================================
+// DROP/PLAY DECISION — THIS IS WHERE YOU MODIFY THE LOGIC
+// =============================================================================
+//
+// This function is called for EVERY incoming Opus frame.
+// It decides: should we decode and play this frame, or drop it?
+//
+// Parameters you can use for the decision:
+//   - age: how old this frame is (ms since it was sent)
+//   - bufferLevel: how full the playout buffer is (0.0 to 1.0)
+//   - pipelineStats: running totals of received/dropped/decoded
+//
+// Return: true = play it, false = drop it
+// =============================================================================
+
+function shouldPlayFrame(age, bufferLevel) {
+  const threshold = getDropThreshold();
+
+  // RULE 1: If the packet is too old, drop it.
+  // A late packet would only add to the buffer (increasing latency) or
+  // play audio that's no longer relevant to real-time sync.
+  if (age > threshold) {
+    return false;
+  }
+
+  // RULE 2: If buffer is nearly full (>90%), drop to prevent latency buildup.
+  // This keeps the buffer from growing unbounded during network bursts.
+  if (bufferLevel > 0.9) {
+    return false;
+  }
+
+  // RULE 3: Play it!
+  return true;
+}
+
+// =============================================================================
+// INSERTABLE STREAMS — Intercept incoming Opus frames from WebRTC
+// =============================================================================
+// This is the bridge between WebRTC and our custom pipeline.
+// Instead of WebRTC auto-decoding and playing, we grab each encoded frame
+// and route it through our decision logic → decoder → worklet.
+// =============================================================================
+
+let firstFrameTime = null;  // Used to estimate frame age
+
+function handleEncodedFrame(encodedFrame, controller) {
+  pipelineStats.received++;
+  flashStage('viz-receive');
+
+  // Estimate age: how long since this frame was created
+  // (timestamp is in microseconds, relative to connection start)
+  const now = performance.now();
+  if (!firstFrameTime) firstFrameTime = now;
+  const age = encodedFrame.timestamp
+    ? (now - firstFrameTime) - (encodedFrame.timestamp / 1000)
+    : 0;
+  pipelineStats.lastPacketAge = Math.max(0, age);
+
+  // Get current buffer fill level from last stats update
+  const bufferLevel = lastBufferFill || 0;
+
+  // === THE DECISION ===
+  if (shouldPlayFrame(Math.abs(age), bufferLevel)) {
+    // PLAY — decode this frame
+    flashStage('viz-decide', true);
+
+    // Feed to WebCodecs AudioDecoder
+    const chunk = new EncodedAudioChunk({
+      type: 'key',  // Opus frames are always independently decodable
+      timestamp: encodedFrame.timestamp,
+      data: encodedFrame.data
+    });
+    audioDecoder.decode(chunk);
+
+  } else {
+    // DROP — this frame is too old or buffer is full
+    flashStage('viz-decide', false);
+    pipelineStats.dropped++;
+  }
+
+  // Don't pass to controller — we're handling decode ourselves.
+  // (Not calling controller.enqueue() bypasses the default WebRTC decode path)
+  encodedFrame.close();
+}
+
+// =============================================================================
+// WEBRTC CONNECTION (same as before, but with Insertable Streams added)
+// =============================================================================
+const ws = new WebSocket(`ws://${location.host}/ws`);
+let pc = null;
+let lastBufferFill = 0;
+
+ws.onopen = () => {
+  log('Connected to signaling server');
+  startBtn.disabled = false;
+};
+
+ws.onmessage = async (event) => {
+  const msg = JSON.parse(event.data);
+  switch (msg.type) {
+    case 'start-call':
+      log('Peer joined — initiating call');
+      await setup();
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify(offer));
+      break;
+    case 'offer':
+      log('Received offer');
+      await setup();
+      await pc.setRemoteDescription(new RTCSessionDescription(msg));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      ws.send(JSON.stringify(answer));
+      break;
+    case 'answer':
+      await pc.setRemoteDescription(new RTCSessionDescription(msg));
+      break;
+    case 'candidate':
+      if (msg.candidate && pc) await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+      break;
+    case 'peer-count':
+      log(`Peers: ${msg.count}/2`);
+      break;
+  }
+};
+
+async function setup() {
+  if (pc) return;
+
+  // Setup our custom audio pipeline
+  await setupAudioWorklet();
+  setupDecoder();
+
+  // Capture mic
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    video: false
+  });
+
+  // Create peer connection with Insertable Streams enabled
+  // "encodedInsertableStreams: true" tells WebRTC to give us access to raw encoded frames
+  pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    encodedInsertableStreams: true
+  });
+
+  // Add mic to connection (this is what we SEND)
+  for (const track of stream.getTracks()) {
+    pc.addTrack(track, stream);
+  }
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+  };
+
+  pc.onconnectionstatechange = () => {
+    log(`Connection: ${pc.connectionState}`);
+    if (pc.connectionState === 'connected') {
+      log('🎵 P2P Connected! Audio pipeline active.');
+      flashStage('viz-play', true);
+    }
+  };
+
+  // =========================================================================
+  // INSERTABLE STREAMS: Intercept incoming audio BEFORE default decode/playout
+  // =========================================================================
+  pc.ontrack = (event) => {
+    log('Remote track received — attaching Insertable Streams transform');
+
+    const receiver = event.receiver;
+    // Get the readable stream of encoded (Opus) frames from WebRTC
+    const receiverStreams = receiver.createEncodedStreams();
+    const readable = receiverStreams.readable;
+    const writable = receiverStreams.writable;
+
+    // Pipe through our transform — each frame goes to handleEncodedFrame()
+    const transform = new TransformStream({
+      transform: handleEncodedFrame
+    });
+
+    // Connect: readable (from WebRTC) → our transform → writable (we consume everything)
+    readable.pipeThrough(transform).pipeTo(writable);
+  };
+}
+
+// Manual start (user gesture required for mic + AudioContext)
+startBtn.onclick = async () => {
+  startBtn.disabled = true;
+  if (audioCtx) audioCtx.resume();
+  log('Ready — waiting for peer connection...');
+};
+
+// =============================================================================
+// VISUALIZATION — updates the pipeline display every 100ms
+// =============================================================================
+
+function flashStage(id, played) {
+  const el = document.getElementById(id);
+  el.classList.remove('stage-idle');
+  el.classList.add('stage-active');
+  setTimeout(() => { el.classList.remove('stage-active'); el.classList.add('stage-idle'); }, 100);
+
+  // Color the decision stage green (play) or red (drop)
+  if (id === 'viz-decide') {
+    el.style.background = played ? '#2d5a2d' : '#5a2d2d';
+  }
+}
+
+// Poll worklet for stats and update display
+setInterval(() => {
+  if (workletNode) {
+    workletNode.port.postMessage({ type: 'get-stats' });
+  }
+
+  // Update stage labels
+  document.getElementById('viz-receive-stat').textContent = `${pipelineStats.received} pkts`;
+  document.getElementById('viz-decode-stat').textContent = `${pipelineStats.decoded} frames`;
+  document.getElementById('viz-decide-stat').textContent =
+    `${pipelineStats.dropped} dropped`;
+
+  // Stats line
+  const dropRate = pipelineStats.received > 0
+    ? ((pipelineStats.dropped / pipelineStats.received) * 100).toFixed(1) : 0;
+  statsEl.textContent =
+    `Received: ${pipelineStats.received} | ` +
+    `Decoded: ${pipelineStats.decoded} | ` +
+    `Dropped: ${pipelineStats.dropped} (${dropRate}%) | ` +
+    `Underruns: ${pipelineStats.underruns} | ` +
+    `Last pkt age: ${pipelineStats.lastPacketAge.toFixed(0)}ms`;
+}, 100);
+
+// Update buffer visualization from worklet stats
+function updateVisualization(stats) {
+  lastBufferFill = stats.fillPercent / 100;
+  pipelineStats.underruns = stats.totalUnderruns;
+
+  const fillEl = document.getElementById('buffer-fill');
+  const labelEl = document.getElementById('buffer-label');
+  fillEl.style.width = `${stats.fillPercent}%`;
+  fillEl.style.background = stats.fillPercent < 20 ? '#f44336' :
+                             stats.fillPercent < 50 ? '#ff9800' : '#4caf50';
+  const ms = (stats.buffered / 48000 * 1000).toFixed(1);
+  labelEl.textContent = `Buffer: ${ms}ms (${stats.fillPercent}% of ${(stats.bufferSize/48000*1000).toFixed(0)}ms)`;
+
+  document.getElementById('viz-buffer-stat').textContent = `${ms}ms`;
+  document.getElementById('viz-play-stat').textContent = `${stats.totalPlayed} smp`;
+}
+</script>
+</body>
+</html>

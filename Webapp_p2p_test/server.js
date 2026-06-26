@@ -38,8 +38,22 @@ const server = Bun.serve({
       if (server.upgrade(req)) return;
       return new Response('WebSocket upgrade failed', { status: 500 });
     }
+
+    // Serve the AudioWorklet processor (must be a separate JS file)
+    if (url.pathname === '/playout-worklet.js') {
+      return new Response(Bun.file('./playout-worklet.js'), {
+        headers: { 'Content-Type': 'application/javascript' }
+      });
+    }
+
+    // /low → low-latency version with Insertable Streams + AudioWorklet
+    if (url.pathname === '/low') {
+      return new Response(Bun.file('./lowlatency.html'), {
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
     
-    // Serve the client HTML file for everything else
+    // Default: original simple client
     return new Response(Bun.file('./client.html'), {
       headers: { 'Content-Type': 'text/html' }
     });

@@ -68,6 +68,7 @@ const ws = new WebSocket(`ws://${location.host}/ws`);
 // It manages the entire P2P connection: ICE negotiation, DTLS encryption, 
 // media encoding/decoding.
 let pc = null;
+let pendingCandidates = [];  // Queue candidates that arrive before remote description
 
 ws.onopen = () => {
   setStatus('Connected to signaling server. Waiting for peer...');
@@ -98,6 +99,11 @@ ws.onmessage = async (event) => {
       await startMic();
       // setRemoteDescription tells our WebRTC engine what the other peer wants
       await pc.setRemoteDescription(new RTCSessionDescription(msg));
+      // Flush any candidates that arrived before the remote description
+      for (const c of pendingCandidates) {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      }
+      pendingCandidates = [];
       // Create an answer: "Yes, I accept. Here's my info."
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -111,6 +117,11 @@ ws.onmessage = async (event) => {
     case 'answer':
       log('Received answer from remote peer');
       await pc.setRemoteDescription(new RTCSessionDescription(msg));
+      // Flush any candidates that arrived before the remote description
+      for (const c of pendingCandidates) {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      }
+      pendingCandidates = [];
       break;
     
     // =========================================================================
@@ -122,8 +133,13 @@ ws.onmessage = async (event) => {
     // =========================================================================
     case 'candidate':
       if (msg.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
-        log('Added ICE candidate');
+        if (pc && pc.remoteDescription) {
+          await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          log('Added ICE candidate');
+        } else {
+          // Queue it — remote description hasn't arrived yet
+          pendingCandidates.push(msg.candidate);
+        }
       }
       break;
     
