@@ -2,7 +2,7 @@
 
   Project structure
 
-  native/
+  asio_app_test/ <br />
   ├── CMakeLists.txt          — Build system (fetches libopus automatically) <br />
   ├── README.md               — Full build & usage instructions <br />
   ├── external/  <br />
