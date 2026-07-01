@@ -1,0 +1,491 @@
+
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>MusiConnect – Instrumented Low Latency</title>
+    <style>
+      body { font-family: monospace; max-width: 900px; margin: 20px auto; padding: 0 20px; background: #0a0a0a; color: #eee; }
+      h2 { margin-bottom: 5px; color: #4fc3f7; }
+      .subtitle { color: #888; font-size: 12px; margin-bottom: 15px; }
+
+      /* Pipeline visualization */
+      #pipeline { display: flex; align-items: center; gap: 4px; margin: 15px 0; flex-wrap: wrap; }
+      .stage { padding: 10px 14px; border-radius: 4px; text-align: center; font-size: 11px; border: 1px solid #333; min-width: 80px;
+  }
+      .stage-active { background: #1a3a1a; color: #4f4; border-color: #4f4; }
+      .stage-idle { background: #1a1a1a; color: #888; }
+      .stage-bypassed { background: #3a1a1a; color: #f44; border-color: #f44; text-decoration: line-through; }
+      .arrow { color: #888; font-size: 16px; }
+      .stage-label { display: block; font-weight: bold; margin-bottom: 3px; }
+      .stage-time { display: block; font-size: 13px; color: #ff0; }
+      .stage-stat { display: block; font-size: 10px; opacity: 0.7; margin-top: 2px; }
+
+      /* Timing table */
+      #timing-table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 12px; }
+      #timing-table th { background: #222; padding: 6px 10px; text-align: left; border-bottom: 1px solid #444; }
+      #timing-table td { padding: 5px 10px; border-bottom: 1px solid #222; }
+      #timing-table .time-val { color: #ff0; font-weight: bold; font-size: 13px; }
+      #timing-table .time-good { color: #4f4; }
+      #timing-table .time-warn { color: #ff9800; }
+      #timing-table .time-bad { color: #f44; }
+
+      /* Controls */
+      #controls { background: #151515; padding: 15px; margin: 10px 0; border-radius: 4px; border: 1px solid #333; }
+      #controls label { display: block; margin: 8px 0 3px; font-weight: bold; color: #aaa; }
+      #controls input[type=range] { width: 200px; vertical-align: middle; }
+      #controls span { font-size: 12px; color: #666; }
+      #controls select { padding: 4px; background: #222; color: #eee; border: 1px solid #555; }
+
+      /* Buffer visualization */
+      #buffer-viz { margin: 15px 0; }
+      #buffer-bar { width: 100%; height: 28px; background: #222; border-radius: 3px; overflow: hidden; position: relative; }
+      #buffer-fill { height: 100%; background: #4caf50; transition: width 0.1s; }
+      #buffer-label { position: absolute; top: 6px; left: 8px; color: white; font-size: 11px; text-shadow: 0 0 4px #000; }
+
+      /* Log */
+      #log { white-space: pre-wrap; font-size: 11px; background: #0d0d0d; color: #0f0; padding: 10px; height: 180px; overflow-y:
+  auto; border: 1px solid #222; border-radius: 3px; }
+      button { padding: 8px 16px; margin: 5px; cursor: pointer; background: #2196f3; color: white; border: none; border-radius: 3px;
+  }
+      button:disabled { background: #333; color: #666; cursor: default; }
+      button:hover:not(:disabled) { background: #1976d2; }
+      .btn-danger { background: #f44336; }
+      .btn-danger:hover { background: #d32f2f; }
+    </style>
+  </head>
+  <body>
+    <h2>MusiConnect – Instrumented Low Latency P2P Audio</h2>
+    <div class="subtitle">Insertable Streams + WebCodecs AudioDecoder — Jitter Buffer Bypassed</div>
+
+    <!-- Pipeline visualization -->
+    <div id="pipeline">
+      <div class="stage stage-idle" id="viz-capture">
+        <span class="stage-label">🎤 Capture</span>
+        <span class="stage-time" id="viz-capture-time">—</span>
+        <span class="stage-stat" id="viz-capture-stat">waiting</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="viz-encode">
+        <span class="stage-label">📦 Encode</span>
+        <span class="stage-time" id="viz-encode-time">—</span>
+        <span class="stage-stat" id="viz-encode-stat">Opus</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="viz-network">
+        <span class="stage-label">🌐 Network</span>
+        <span class="stage-time" id="viz-network-time">—</span>
+        <span class="stage-stat" id="viz-network-stat">RTT/2</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage stage-bypassed" id="viz-jitter">
+        <span class="stage-label">🚫 Jitter Buf</span>
+        <span class="stage-time" id="viz-jitter-time">BYPASSED</span>
+        <span class="stage-stat" id="viz-jitter-stat">0ms</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="viz-decode">
+        <span class="stage-label">🔓 Decode</span>
+        <span class="stage-time" id="viz-decode-time">—</span>
+        <span class="stage-stat" id="viz-decode-stat">WebCodecs</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="viz-buffer">
+        <span class="stage-label">📊 Buffer</span>
+        <span class="stage-time" id="viz-buffer-time">—</span>
+        <span class="stage-stat" id="viz-buffer-stat">ring buf</span>
+      </div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="viz-output">
+        <span class="stage-label">🔊 Output</span>
+        <span class="stage-time" id="viz-output-time">—</span>
+        <span class="stage-stat" id="viz-output-stat">DAC</span>
+      </div>
+    </div>
+
+    <!-- Per-stage timing table -->
+    <table id="timing-table">
+      <thead>
+        <tr><th>Stage</th><th>Latency</th><th>Description</th><th>Status</th></tr>
+      </thead>
+      <tbody id="timing-body">
+        <tr><td>Capture</td><td class="time-val" id="t-capture">—</td><td>Mic → getUserMedia buffer</td><td
+  id="s-capture">idle</td></tr>
+        <tr><td>Encode (Opus)</td><td class="time-val" id="t-encode">—</td><td>PCM → Opus frame (ptime)</td><td
+  id="s-encode">idle</td></tr>
+        <tr><td>Network</td><td class="time-val" id="t-network">—</td><td>Sender → Receiver (RTT/2)</td><td
+  id="s-network">idle</td></tr>
+        <tr><td>Jitter Buffer</td><td class="time-val time-good" id="t-jitter">0ms ✓</td><td>BYPASSED via Insertable Streams</td><td
+   id="s-jitter">bypassed</td></tr>
+        <tr><td>Decode (WebCodecs)</td><td class="time-val" id="t-decode">—</td><td>Opus → PCM via AudioDecoder</td><td
+  id="s-decode">idle</td></tr>
+        <tr><td>Ring Buffer</td><td class="time-val" id="t-buffer">—</td><td>Worklet playout buffer</td><td
+  id="s-buffer">idle</td></tr>
+        <tr><td>Output (DAC)</td><td class="time-val" id="t-output">—</td><td>AudioContext → speakers</td><td
+  id="s-output">idle</td></tr>
+        <tr style="background:#1a1a2a"><td><strong>TOTAL</strong></td><td class="time-val" id="t-total"
+  style="font-size:15px">—</td><td>End-to-end estimated</td><td id="s-total">—</td></tr>
+      </tbody>
+    </table>
+
+    <!-- Buffer fill bar -->
+    <div id="buffer-viz">
+      <div id="buffer-bar">
+        <div id="buffer-fill" style="width: 0%"></div>
+        <span id="buffer-label">Buffer: empty</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls">
+      <label>Playout Buffer Size:
+        <input type="range" id="bufferSlider" min="64" max="4800" value="256" step="64">
+        <span id="bufferValue">256 samples (5.3ms)</span>
+      </label>
+      <span>↑ Trade latency vs. stability. Lower = less delay, more glitches.</span>
+
+      <label>Opus ptime (frame duration):
+        <select id="ptimeSelect">
+          <option value="10">10ms (aggressive)</option>
+          <option value="20" selected>20ms (default)</option>
+          <option value="40">40ms (safe)</option>
+        </select>
+      </label>
+
+      <label>
+        <input type="checkbox" id="disableProcessing" checked>
+        Disable echo cancellation / noise suppression (saves ~20ms)
+      </label>
+    </div>
+
+    <button id="startBtn" disabled>Join & Start Microphone</button>
+    <button id="resetBtn" class="btn-danger" style="display:none">Reset</button>
+    <div id="log"></div>
+
+  <script>
+  // =============================================================================
+  // INSTRUMENTED LOW-LATENCY CLIENT
+  //
+  // KEY DIFFERENCE FROM ORIGINAL:
+  // Instead of: WebRTC decode → jitter buffer → MediaStream → worklet
+  // We do:      WebRTC encoded frames → WebCodecs AudioDecoder → worklet (via port)
+  //
+  // This BYPASSES the browser's jitter buffer entirely.
+  // The trade-off: no jitter compensation = glitches on bad networks, but minimal latency.
+  // =============================================================================
+
+  const logEl = document.getElementById('log');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+
+  function log(msg) {
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 1 });
+    logEl.textContent += `[${time}] ${msg}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // =============================================================================
+  // TIMING STATE — tracks per-stage measurements
+  // =============================================================================
+  const timing = {
+    capture: 0,       // getUserMedia latency (from constraints)
+    encode: 0,        // Opus ptime (frame duration)
+    network: 0,       // RTT/2 from WebRTC stats
+    jitter: 0,        // Always 0 — bypassed
+    decode: 0,        // Measured: time from encoded frame arrival to decoded output
+    buffer: 0,        // Computed: buffered samples / sampleRate
+    output: 0,        // AudioContext.baseLatency + outputLatency
+    total: 0,
+    // Decode measurement
+    decodeStart: 0,
+    decodeCount: 0,
+    decodeSum: 0,
+    // Frame inter-arrival
+    lastFrameTime: 0,
+    frameIntervals: [],
+  };
+
+  function updateTimingDisplay() {
+    timing.total = timing.capture + timing.encode + timing.network +
+                   timing.jitter + timing.decode + timing.buffer + timing.output;
+
+    const fields = ['capture', 'encode', 'network', 'jitter', 'decode', 'buffer', 'output', 'total'];
+    for (const f of fields) {
+      const el = document.getElementById(`t-${f}`);
+      const val = timing[f];
+      if (f === 'jitter') { el.textContent = '0ms ✓'; continue; }
+      el.textContent = val > 0 ? `${val.toFixed(1)}ms` : '—';
+      el.className = 'time-val ' + (val < 5 ? 'time-good' : val < 15 ? 'time-warn' : 'time-bad');
+    }
+
+    // Update pipeline visualization times
+    document.getElementById('viz-capture-time').textContent = timing.capture > 0 ? `${timing.capture.toFixed(1)}ms` : '—';
+    document.getElementById('viz-encode-time').textContent = timing.encode > 0 ? `${timing.encode.toFixed(0)}ms` : '—';
+    document.getElementById('viz-network-time').textContent = timing.network > 0 ? `${timing.network.toFixed(1)}ms` : '—';
+    document.getElementById('viz-decode-time').textContent = timing.decode > 0 ? `${timing.decode.toFixed(2)}ms` : '—';
+    document.getElementById('viz-buffer-time').textContent = timing.buffer > 0 ? `${timing.buffer.toFixed(1)}ms` : '—';
+    document.getElementById('viz-output-time').textContent = timing.output > 0 ? `${timing.output.toFixed(1)}ms` : '—';
+  }
+
+  // =============================================================================
+  // CONTROLS
+  // =============================================================================
+  const bufferSlider = document.getElementById('bufferSlider');
+  const ptimeSelect = document.getElementById('ptimeSelect');
+
+  bufferSlider.oninput = () => {
+    const samples = parseInt(bufferSlider.value);
+    const ms = (samples / 48000 * 1000).toFixed(1);
+    document.getElementById('bufferValue').textContent = `${samples} samples (${ms}ms)`;
+    if (workletNode) {
+      workletNode.port.postMessage({ type: 'resize', bufferSize: samples });
+      log(`Buffer resized → ${samples} samples (${ms}ms)`);
+    }
+  };
+
+  // =============================================================================
+  // AUDIO PIPELINE
+  // =============================================================================
+  let audioCtx = null;
+  let workletNode = null;
+
+  async function setupAudioPipeline() {
+    audioCtx = new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' });
+
+    // Measure output latency
+    timing.output = (audioCtx.baseLatency + (audioCtx.outputLatency || 0)) * 1000;
+    log(`AudioContext baseLatency: ${(audioCtx.baseLatency * 1000).toFixed(1)}ms`);
+    log(`AudioContext outputLatency: ${((audioCtx.outputLatency || 0) * 1000).toFixed(1)}ms`);
+    document.getElementById('s-output').textContent = `${timing.output.toFixed(1)}ms`;
+
+    await audioCtx.audioWorklet.addModule('playout-worklet.js');
+
+    workletNode = new AudioWorkletNode(audioCtx, 'playout-processor', {
+      processorOptions: { bufferSize: parseInt(bufferSlider.value) }
+    });
+
+    // Connect worklet to speakers (no input connection — we feed via port)
+    workletNode.connect(audioCtx.destination);
+
+    // Receive stats from worklet
+    workletNode.port.onmessage = (event) => {
+      if (event.data.type === 'stats') {
+        updateBufferVisualization(event.data);
+      }
+    };
+
+    log('Audio pipeline ready (worklet → speakers)');
+    document.getElementById('viz-output').classList.replace('stage-idle', 'stage-active');
+    updateTimingDisplay();
+  }
+
+  // =============================================================================
+  // WEBCODECS AUDIO DECODER — replaces browser's built-in jitter buffer + decoder
+  // =============================================================================
+  let audioDecoder = null;
+
+  function setupDecoder() {
+    audioDecoder = new AudioDecoder({
+      output(audioData) {
+        // Measure decode time
+        const decodeEnd = performance.now();
+        if (timing.decodeStart > 0) {
+          const elapsed = decodeEnd - timing.decodeStart;
+          timing.decodeSum += elapsed;
+          timing.decodeCount++;
+          timing.decode = timing.decodeSum / timing.decodeCount;
+        }
+
+        // Extract PCM samples and send to worklet
+        const numFrames = audioData.numberOfFrames;
+        const numChannels = audioData.numberOfChannels;
+        const samples = new Float32Array(numFrames);
+
+        // Copy first channel (mono playout)
+        audioData.copyTo(samples, { planeIndex: 0, format: 'f32-planar' });
+        audioData.close();
+
+        // Send to worklet via port (bypasses all browser audio routing)
+        workletNode.port.postMessage({ type: 'samples', data: samples }, [samples.buffer]);
+      },
+      error(e) {
+        log(`❌ Decode error: ${e.message}`);
+      }
+    });
+
+    audioDecoder.configure({
+      codec: 'opus',
+      sampleRate: 48000,
+      numberOfChannels: 1,
+    });
+
+    log('WebCodecs AudioDecoder configured (Opus 48kHz mono)');
+    document.getElementById('viz-decode').classList.replace('stage-idle', 'stage-active');
+    document.getElementById('s-decode').textContent = 'active';
+  }
+
+  // =============================================================================
+  // INSERTABLE STREAMS — intercepts encoded frames BEFORE the jitter buffer
+  // =============================================================================
+  function setupInsertableStreams(receiver) {
+    const receiverStreams = receiver.createEncodedStreams();
+    const { readable, writable } = receiverStreams;
+
+    const transformer = new TransformStream({
+      transform(encodedFrame, controller) {
+        const now = performance.now();
+
+        // Measure inter-frame arrival time
+        if (timing.lastFrameTime > 0) {
+          const interval = now - timing.lastFrameTime;
+          timing.frameIntervals.push(interval);
+          if (timing.frameIntervals.length > 50) timing.frameIntervals.shift();
+        }
+        timing.lastFrameTime = now;
+
+        // Decode with WebCodecs instead of letting browser handle it
+        timing.decodeStart = now;
+        try {
+          const chunk = new EncodedAudioChunk({
+            type: 'key',
+            timestamp: encodedFrame.timestamp,
+            data: encodedFrame.data,
+          });
+          audioDecoder.decode(chunk);
+        } catch (e) {
+          log(`⚠️ Frame decode failed: ${e.message}`);
+        }
+
+        // Don't let the browser also decode it — zero out the data
+        encodedFrame.data = new ArrayBuffer(0);
+        controller.enqueue(encodedFrame);
+      }
+    });
+
+    readable.pipeThrough(transformer).pipeTo(writable);
+
+    log('Insertable Streams active — jitter buffer BYPASSED');
+    document.getElementById('viz-jitter').classList.replace('stage-idle', 'stage-bypassed');
+    document.getElementById('viz-capture').classList.replace('stage-idle', 'stage-active');
+  }
+
+  // =============================================================================
+  // WEBRTC CONNECTION
+  // =============================================================================
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  let pc = null;
+  let pendingCandidates = [];
+
+  ws.onopen = () => {
+    log('Connected to signaling server');
+    startBtn.disabled = false;
+  };
+
+  ws.onerror = (e) => log('❌ WebSocket error');
+  ws.onclose = () => log('WebSocket closed');
+
+  ws.onmessage = async (event) => {
+    const msg = JSON.parse(event.data);
+    switch (msg.type) {
+      case 'start-call':
+        log('Peer joined — initiating call');
+        await setup();
+        const offer = await pc.createOffer();
+        const ptime = ptimeSelect.value;
+        offer.sdp = offer.sdp.replace(/a=ptime:\d+/g, `a=ptime:${ptime}`);
+        offer.sdp = offer.sdp.replace(/a=maxptime:\d+/g, `a=maxptime:${ptime}`);
+        if (!offer.sdp.includes('a=ptime')) {
+          offer.sdp = offer.sdp.replace(/(a=rtpmap:\d+ opus\/48000\/2\r\n)/g, `$1a=ptime:${ptime}\r\n`);
+        }
+        timing.encode = parseInt(ptime);
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify(pc.localDescription));
+        log(`SDP offer sent (ptime=${ptime}ms)`);
+        break;
+
+      case 'offer':
+        log('Received offer');
+        await setup();
+        await pc.setRemoteDescription(new RTCSessionDescription(msg));
+        for (const c of pendingCandidates) await pc.addIceCandidate(new RTCIceCandidate(c));
+        pendingCandidates = [];
+        const answer = await pc.createAnswer();
+        const pt = ptimeSelect.value;
+        answer.sdp = answer.sdp.replace(/a=ptime:\d+/g, `a=ptime:${pt}`);
+        answer.sdp = answer.sdp.replace(/a=maxptime:\d+/g, `a=maxptime:${pt}`);
+        timing.encode = parseInt(pt);
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify(pc.localDescription));
+        log(`SDP answer sent (ptime=${pt}ms)`);
+        break;
+
+      case 'answer':
+        await pc.setRemoteDescription(new RTCSessionDescription(msg));
+        for (const c of pendingCandidates) await pc.addIceCandidate(new RTCIceCandidate(c));
+        pendingCandidates = [];
+        break;
+
+      case 'candidate':
+        if (msg.candidate) {
+          if (pc && pc.remoteDescription) {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          } else {
+            pendingCandidates.push(msg.candidate);
+          }
+        }
+        break;
+
+      case 'peer-count':
+        log(`Peers connected: ${msg.count}/2`);
+        break;
+    }
+  };
+
+  async function setup() {
+    if (pc) return;
+
+    await setupAudioPipeline();
+    setupDecoder();
+
+    // Capture microphone
+    const disableProc = document.getElementById('disableProcessing').checked;
+    const constraints = {
+      audio: {
+        echoCancellation: !disableProc,
+        noiseSuppression: !disableProc,
+        autoGainControl: !disableProc,
+        latency: 0,
+      },
+      video: false
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    const track = stream.getAudioTracks()[0];
+    const settings = track.getSettings();
+    log(`Mic: ${track.label}`);
+    log(`  Sample rate: ${settings.sampleRate || 48000}Hz, Latency: ${((settings.latency || 0) * 1000).toFixed(1)}ms`);
+    log(`  Echo cancel: ${settings.echoCancellation}, Noise supp: ${settings.noiseSuppression}`);
+
+    timing.capture = (settings.latency || 0.003) * 1000;
+    document.getElementById('s-capture').textContent = `${timing.capture.toFixed(1)}ms`;
+    document.getElementById('viz-capture').classList.replace('stage-idle', 'stage-active');
+
+    // Create RTCPeerConnection with encoded insertable streams
+    pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+      encodedInsertableStreams: true,
+    });
+
+    for (const t of stream.getTracks()) {
+      pc.addTrack(t, stream);
+    }
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) ws.send(JSON.stringify({ type: 'candidate', candidate: e.candidate }));
+    };
+
+    pc.onconnectionstatechange = () => {
+      log(`Connection state: ${pc.connectionState}`);
+      if (pc.connectionState === 'connected') {
+        log('✅ P2P Connected — audio flowing!');
+        document.
