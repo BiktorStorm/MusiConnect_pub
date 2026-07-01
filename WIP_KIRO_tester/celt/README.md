@@ -1,4 +1,5 @@
 // Latency is still aroud 60 ms 
+baseLatency: 10 ms, outputLatency: 40 ms?
 
   C source code (libopus)
       ↓ Emscripten compiler (emcc)
@@ -23,12 +24,21 @@
   2. Build:
 
      cd /mnt/c/Users/.../celt
+     in particular: cd '/c/Users/ealinor/OneDrive - Ericsson/Desktop/WIP_KIRO_tester/celt'
+
      chmod +x build_wasm.sh
      ./build_wasm.sh
+     in particular: bash build_wasm.sh
 
-  3. Run:
+  4. Run:
 
      cd /mnt/c/Users/(PATH innan celt)
      bun run server.js
      # Open http://localhost:3000/celt in two Chrome tabs
+
+________________________________
+Check of latency speed in browser console: (ctrl + shift + J on windows)
+const temp = new AudioContext(); 
+console.log('baseLatency:', temp.baseLatency * 1000, 'ms');
+console.log('outputLatency:', temp.outputLatency * 1000, 'ms');
 
