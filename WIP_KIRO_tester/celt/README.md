@@ -38,7 +38,7 @@ baseLatency: 10 ms, outputLatency: 40 ms?
 
 ________________________________
 Check of latency speed in browser console: (ctrl + shift + J on windows) <br />
-const temp = new AudioContext(); 
-console.log('baseLatency:', temp.baseLatency * 1000, 'ms');
-console.log('outputLatency:', temp.outputLatency * 1000, 'ms');
+const temp = new AudioContext(); <br />
+console.log('baseLatency:', temp.baseLatency * 1000, 'ms'); <br />
+console.log('outputLatency:', temp.outputLatency * 1000, 'ms'); <br />
 
