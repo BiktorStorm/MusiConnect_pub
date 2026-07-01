@@ -35,9 +35,9 @@
 
   Why this achieves ~3ms instead of 60ms
 
-  ┌─────────────────────────────────────────────┬─────────────────────────────────────┐ <br />
-  │ What the browser does                               │ What native ASIO does                                  │ <br />
-  ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────┤ <br />
+  ┌────────────────────────┬───────────────────┐ <br />
+  │ What the browser does  │ What native ASIO does         │ <br />
+  ├────────────────────────────────────────────────────┼────────────────────────────────────────────────────────┤ <br />
   │ getUserMedia → OS mixer → capture buffer (10-20ms)  │ Direct hardware interrupt → your callback (1.33ms)     │ <br />
   ├─────────────────────────────────────────────────────┼────────────────────────────────────────────────────────┤ <br />
   │ AudioContext output → OS mixer → speakers (25-50ms) │ Your callback → direct to DAC (1.33ms)                 │ <br />
