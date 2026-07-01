@@ -1,0 +1,163 @@
+
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>MusiConnect – CELT DataChannel (Ultra Low Latency)</title>
+    <style>
+      body { font-family: monospace; max-width: 900px; margin: 20px auto; padding: 0 20px; background: #0a0a0a; color: #eee; }
+      h2 { margin-bottom: 5px; color: #ff9800; }
+      .subtitle { color: #888; font-size: 12px; margin-bottom: 15px; }
+      #pipeline { display: flex; align-items: center; gap: 4px; margin: 15px 0; flex-wrap: wrap; }
+      .stage { padding: 10px 12px; border-radius: 4px; text-align: center; font-size: 11px; border: 1px solid #333; min-width: 75px;
+  }
+      .stage-active { background: #1a3a1a; color: #4f4; border-color: #4f4; }
+      .stage-idle { background: #1a1a1a; color: #888; }
+      .arrow { color: #666; font-size: 14px; }
+      .stage-label { display: block; font-weight: bold; margin-bottom: 2px; font-size: 10px; }
+      .stage-time { display: block; font-size: 13px; color: #ff0; }
+      #timing-table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 12px; }
+      #timing-table th { background: #222; padding: 5px 8px; text-align: left; }
+      #timing-table td { padding: 4px 8px; border-bottom: 1px solid #1a1a1a; }
+      .tv { color: #ff0; font-weight: bold; }
+      .tv-good { color: #4f4; }
+      .tv-warn { color: #ff9800; }
+      .tv-bad { color: #f44; }
+      #buffer-bar { width: 100%; height: 22px; background: #222; border-radius: 3px; overflow: hidden; position: relative; margin:
+  10px 0; }
+      #buffer-fill { height: 100%; background: #4caf50; transition: width 0.1s; }
+      #buffer-label { position: absolute; top: 3px; left: 8px; color: white; font-size: 11px; }
+      #controls { background: #151515; padding: 12px; margin: 10px 0; border-radius: 4px; border: 1px solid #333; }
+      #controls label { display: block; margin: 6px 0 2px; color: #aaa; font-size: 12px; }
+      #controls input[type=range] { width: 180px; vertical-align: middle; }
+      #controls span { font-size: 11px; color: #666; }
+      #log { white-space: pre-wrap; font-size: 11px; background: #0d0d0d; color: #0f0; padding: 10px; height: 160px; overflow-y:
+  auto; border: 1px solid #222; border-radius: 3px; margin-top: 10px; }
+      button { padding: 8px 16px; margin: 5px; cursor: pointer; background: #ff9800; color: #000; border: none; border-radius: 3px;
+  font-weight: bold; }
+      button:disabled { background: #333; color: #666; }
+      .warn { background: #332200; border: 1px solid #664400; padding: 8px; border-radius: 4px; margin: 10px 0; font-size: 11px;
+  color: #ffaa00; }
+    </style>
+  </head>
+  <body>
+    <h2>MusiConnect – CELT/DataChannel Mode</h2>
+    <div class="subtitle">WASM Opus Custom Mode (64 samples = 1.33ms frames) over unreliable DataChannel</div>
+
+    <div class="warn">
+      ⚠️ Requires: WASM build of libopus (run <code>build_wasm.sh</code> first).
+      Both peers must use this page — not compatible with standard Opus/WebRTC audio.
+    </div>
+
+    <!-- Pipeline -->
+    <div id="pipeline">
+      <div class="stage stage-idle" id="v-mic"><span class="stage-label">🎤 Mic</span><span class="stage-time"
+  id="vt-mic">—</span></div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="v-enc"><span class="stage-label">🔒 CELT Enc</span><span class="stage-time"
+  id="vt-enc">—</span></div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="v-dc"><span class="stage-label">📡 DataCh</span><span class="stage-time"
+  id="vt-dc">—</span></div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="v-dec"><span class="stage-label">🔓 CELT Dec</span><span class="stage-time"
+  id="vt-dec">—</span></div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="v-buf"><span class="stage-label">📊 Buffer</span><span class="stage-time"
+  id="vt-buf">—</span></div>
+      <span class="arrow">→</span>
+      <div class="stage stage-idle" id="v-out"><span class="stage-label">🔊 DAC</span><span class="stage-time"
+  id="vt-out">—</span></div>
+    </div>
+
+    <!-- Timing table -->
+    <table id="timing-table">
+      <tr><th>Stage</th><th>Latency</th><th>Notes</th></tr>
+      <tr><td>Capture</td><td class="tv" id="t-cap">—</td><td>AudioWorklet → 64-sample frame</td></tr>
+      <tr><td>CELT Encode</td><td class="tv" id="t-enc">—</td><td>WASM opus_custom_encode_float</td></tr>
+      <tr><td>DataChannel</td><td class="tv" id="t-dc">—</td><td>Unreliable, unordered (UDP-like)</td></tr>
+      <tr><td>CELT Decode</td><td class="tv" id="t-dec">—</td><td>WASM opus_custom_decode_float</td></tr>
+      <tr><td>Play Buffer</td><td class="tv" id="t-buf">—</td><td>Ring buffer in worklet</td></tr>
+      <tr><td>Output DAC</td><td class="tv" id="t-out">—</td><td>AudioContext.baseLatency</td></tr>
+      <tr style="background:#1a1a2a"><td><b>TOTAL</b></td><td class="tv" id="t-total" style="font-size:14px">—</td><td>End-to-end
+  one-way</td></tr>
+    </table>
+
+    <!-- Buffer bar -->
+    <div id="buffer-bar">
+      <div id="buffer-fill" style="width:0%"></div>
+      <span id="buffer-label">Buffer: empty</span>
+    </div>
+
+    <!-- Controls -->
+    <div id="controls">
+      <label>Play buffer size:
+        <input type="range" id="bufSlider" min="64" max="1024" value="192" step="64">
+        <span id="bufVal">192 samples (4.0ms)</span>
+      </label>
+    </div>
+
+    <button id="startBtn" disabled>Join & Start</button>
+    <div id="log"></div>
+
+    <!-- Load WASM module -->
+    <script src="opus_celt.js"></script>
+  <script>
+  // =============================================================================
+  // CELT DATACHANNEL CLIENT
+  //
+  // DATA FLOW:
+  //   Mic → AudioWorklet (64-sample frames) → Main thread → WASM CELT encode
+  //   → DataChannel (unreliable) → Remote peer
+  //   → WASM CELT decode → AudioWorklet ring buffer → Speakers
+  //
+  // NO WebRTC audio track is used. Audio is pure binary over DataChannel.
+  // =============================================================================
+
+  const logEl = document.getElementById('log');
+  const startBtn = document.getElementById('startBtn');
+
+  function log(msg) {
+    const t = new Date().toLocaleTimeString('en-US', {hour12:false, fractionalSecondDigits:1});
+    logEl.textContent += `[${t}] ${msg}\n`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  // Timing state
+  const T = { cap: 0, enc: 0, dc: 0, dec: 0, buf: 0, out: 0, total: 0 };
+  let encodeTimeSum = 0, encodeCount = 0;
+  let decodeTimeSum = 0, decodeCount = 0;
+
+  function updateDisplay() {
+    T.total = T.cap + T.enc + T.dc + T.dec + T.buf + T.out;
+    const ids = {cap:'t-cap', enc:'t-enc', dc:'t-dc', dec:'t-dec', buf:'t-buf', out:'t-out', total:'t-total'};
+    for (const [k, id] of Object.entries(ids)) {
+      const el = document.getElementById(id);
+      const v = T[k];
+      el.textContent = v > 0 ? `${v.toFixed(2)}ms` : '—';
+      el.className = 'tv ' + (v < 3 ? 'tv-good' : v < 10 ? 'tv-warn' : 'tv-bad');
+    }
+    document.getElementById('vt-mic').textContent = T.cap > 0 ? `${T.cap.toFixed(1)}ms` : '—';
+    document.getElementById('vt-enc').textContent = T.enc > 0 ? `${T.enc.toFixed(2)}ms` : '—';
+    document.getElementById('vt-dc').textContent = T.dc > 0 ? `${T.dc.toFixed(1)}ms` : '—';
+    document.getElementById('vt-dec').textContent = T.dec > 0 ? `${T.dec.toFixed(2)}ms` : '—';
+    document.getElementById('vt-buf').textContent = T.buf > 0 ? `${T.buf.toFixed(1)}ms` : '—';
+    document.getElementById('vt-out').textContent = T.out > 0 ? `${T.out.toFixed(1)}ms` : '—';
+  }
+
+  // --- WASM module ---
+  let wasmModule = null;
+  let celtInit, celtEncode, celtDecode, getPcmPtr, getEncodedPtr;
+  let pcmPtr, encPtr;
+  const FRAME_SIZE = 64;
+  const SAMPLE_RATE = 48000;
+  const CHANNELS = 1;
+  const BITRATE = 64000;
+  const FRAME_MS = (FRAME_SIZE / SAMPLE_RATE) * 1000; // 1.33ms
+
+  async function loadWasm() {
+    log('Loading WASM module...');
+    wasmModule = await createOpusCelt();
+
+    celtInit = wasmModule.cwrap('celt_init', 'number', ['number','number','number','number','number']);
+    celt
