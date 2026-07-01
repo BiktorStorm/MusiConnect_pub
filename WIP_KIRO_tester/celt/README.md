@@ -21,13 +21,13 @@
 
   2. Build:
 
-     cd /mnt/c/Users/ealinor/Downloads/Webapp_p2p_test/celt
+     cd /mnt/c/Users/.../celt
      chmod +x build_wasm.sh
      ./build_wasm.sh
 
   3. Run:
 
-     cd /mnt/c/Users/ealinor/Downloads/Webapp_p2p_test
+     cd /mnt/c/Users/(PATH innan celt)
      bun run server.js
      # Open http://localhost:3000/celt in two Chrome tabs
 
