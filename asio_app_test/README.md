@@ -3,7 +3,7 @@
   Project structure
 
   native/
-  ├── CMakeLists.txt          — Build system (fetches libopus automatically) < br/>
+  ├── CMakeLists.txt          — Build system (fetches libopus automatically) <br />
   ├── README.md               — Full build & usage instructions <br />
   ├── external/
   │   └── asio/               — YOU place the ASIO SDK here (download from Steinberg)
