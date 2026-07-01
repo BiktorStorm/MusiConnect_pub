@@ -37,7 +37,7 @@ baseLatency: 10 ms, outputLatency: 40 ms?
      # Open http://localhost:3000/celt in two Chrome tabs
 
 ________________________________
-Check of latency speed in browser console: (ctrl + shift + J on windows) __
+Check of latency speed in browser console: (ctrl + shift + J on windows) <br />
 const temp = new AudioContext(); 
 console.log('baseLatency:', temp.baseLatency * 1000, 'ms');
 console.log('outputLatency:', temp.outputLatency * 1000, 'ms');
