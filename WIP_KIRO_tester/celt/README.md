@@ -1,3 +1,4 @@
+// Latency is still aroud 60 ms 
 
   C source code (libopus)
       ↓ Emscripten compiler (emcc)
