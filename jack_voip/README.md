@@ -10,16 +10,16 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
 
   <br />
 
-  jack_voip/
-  ├── CMakeLists.txt          — Build system (finds JACK, fetches libopus)
-  ├── README.md               — This file
-  └── src/
-      ├── main.cpp            — Application entry point
-      ├── audio_jack.h/.cpp   — JACK audio driver (capture + playout)
-      ├── celt_codec.h/.cpp   — CELT encoder/decoder (Opus Custom Mode)
-      ├── network.h/.cpp      — UDP transport (raw, no retransmission)
-      └── ring_buffer.h       — Lock-free SPSC ring buffer
-
+  jack_voip/ <br />
+  ├── CMakeLists.txt          — Build system (finds JACK, fetches libopus) <br />
+  ├── README.md               — Full build & usage instructions <br />
+  └── src/ <br />
+      ├── main.cpp            — Application entry point <br />
+      ├── audio_jack.h/.cpp   — JACK audio driver (capture + playout) <br />
+      ├── celt_codec.h/.cpp   — CELT encoder/decoder (Opus Custom Mode) <br /> 
+      ├── network.h/.cpp      — UDP transport (raw, no retransmission) <br />
+      └── ring_buffer.h       — Lock-free SPSC ring buffer <br /> 
+      
   <br />
 
   Why JACK Instead of ASIO? <br />
