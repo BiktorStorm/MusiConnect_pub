@@ -237,3 +237,13 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
   - No external/ folder needed — JACK is a system library (installed via package manager) <br />
   - JACK provides the same low-latency callback model as ASIO but is cross-platform (Linux, macOS, Windows via JACK2) <br />
   - JACK's callback runs in a realtime thread, giving the same deterministic timing as ASIO <br />
+
+    Machine A (e.g., IP = 192.168.1.10) — open PowerShell:
+
+  .\Release\jack_voip.exe --local-port 4464 --remote-port 4464 --remote-host 192.168.1.20
+
+  Machine B (e.g., IP = 192.168.1.20) — open PowerShell:
+
+  .\Release\jack_voip.exe --local-port 4464 --remote-port 4464 --remote-host 192.168.1.10
+
+  Both use port 4464. Each points --remote-host at the other machine's IP.
