@@ -267,4 +267,35 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
 
   .\Release\jack_voip.exe --local-port 4464 --remote-port 4464 --remote-host 192.168.1.10
 
-  Both use port 4464. Each points --remote-host at the other machine's IP.
+  Both use port 4464. Each points --remote-host at the other machine's IP. 
+
+    ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Localhost: Two terminals on the SAME computer
+
+
+  - Both instances run on your PC
+  - They talk via 127.0.0.1 (loopback — no real network)
+  - You need different ports (4464 and 4465) because two programs can't listen on the same port on one machine
+  - You need different JACK client names (--name jack_voip_b) because JACK requires unique names
+  - Useful for testing that the code works before involving a second machine
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  LAN: Two DIFFERENT computers on the same network
+
+ 
+
+  - Each instance runs on a separate PC (e.g., you and a bandmate)
+  - They talk via real network (WiFi or Ethernet)
+  - They can use the same port (4464) because they're different machines
+  - No need for different names — each machine has its own JACK server
+  - --remote-host points to the other person's IP address
+  - This is the actual use case — playing music together over a network
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Quick comparison
+
+
+  The localhost test lets you verify everything compiles and runs correctly before you set up the real scenario with a second musician.
