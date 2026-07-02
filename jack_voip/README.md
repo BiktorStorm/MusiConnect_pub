@@ -127,17 +127,29 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
 
   <br />
 
-  Terminal A: <br />
+  Run (PowerShell):
 
-  ./jack_voip --local-port 4464 --remote-port 4465
+  # Terminal A:
+  .\Release\jack_voip.exe --local-port 4464 --remote-port 4465
 
-  <br />
+  # Terminal B:
+  .\Release\jack_voip.exe --local-port 4465 --remote-port 4464 --name jack_voip_b
 
-  Terminal B: <br />
+  LAN (PowerShell):
 
-  ./jack_voip --local-port 4465 --remote-port 4464 --name jack_voip_b
+  # Machine A:
+  .\Release\jack_voip.exe --local-port 4464 --remote-port 4464 --remote-host 192.168.1.20
 
-  <br />
+  # Machine B:
+  .\Release\jack_voip.exe --local-port 4464 --remote-port 4464 --remote-host 192.168.1.10
+
+  Start JACK on Windows:
+
+  # Using JACK's ASIO backend (not ALSA):
+  "C:\Program Files\JACK2\jackd.exe" -d portaudio -r 48000 -p 64
+
+  Or just use QjackCtl (the GUI that comes with JACK2 for Windows) — set sample rate to 48000, frames/period to 64, and select your ASIO driver.
+
 
   Connect over LAN <br />
 
