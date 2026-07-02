@@ -108,6 +108,15 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
   cmake ..
   cmake --build . --config Release
 
+  (Windows)
+    Build (PowerShell):
+
+  cd jack_voip <br />
+  mkdir build <br />
+  cd build <br />
+  cmake .. <br />
+  cmake --build . --config Release <br />
+
   <br />
 
   Usage <br />
