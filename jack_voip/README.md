@@ -1,4 +1,224 @@
 Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
+  JACK VoIP — Ultra-Low Latency Music Communication <br />
+
+  <br />
+  A peer-to-peer audio application using JACK Audio, Opus CELT codec, and raw UDP transport for sub-10ms round-trip
+  latency on a LAN. <br />
+  <br />
+
+  Architecture <br />
+
+  <br />
+
+  jack_voip/
+  ├── CMakeLists.txt          — Build system (finds JACK, fetches libopus)
+  ├── README.md               — This file
+  └── src/
+      ├── main.cpp            — Application entry point
+      ├── audio_jack.h/.cpp   — JACK audio driver (capture + playout)
+      ├── celt_codec.h/.cpp   — CELT encoder/decoder (Opus Custom Mode)
+      ├── network.h/.cpp      — UDP transport (raw, no retransmission)
+      └── ring_buffer.h       — Lock-free SPSC ring buffer
+
+  <br />
+
+  Why JACK Instead of ASIO? <br />
+
+  <br />
+
+  ┌───────────────────┬─────────────────────────┬──────────────────────────────────┐
+  │ Feature           │ ASIO                    │ JACK                             │
+  ├───────────────────┼─────────────────────────┼──────────────────────────────────┤
+  │ Platform          │ Windows only            │ Linux, macOS, Windows            │
+  ├───────────────────┼─────────────────────────┼──────────────────────────────────┤
+  │ SDK               │ Proprietary (Steinberg) │ Open source (LGPL)               │
+  ├───────────────────┼─────────────────────────┼──────────────────────────────────┤
+  │ Latency model     │ Callback-based          │ Callback-based (identical)       │
+  ├───────────────────┼─────────────────────────┼──────────────────────────────────┤
+  │ Buffer sizes      │ 32–4096 samples         │ 16–4096 samples                  │
+  ├───────────────────┼─────────────────────────┼──────────────────────────────────┤
+  │ Inter-app routing │ No                      │ Yes (connect any app to any app) │
+  ├───────────────────┼─────────────────────────┼──────────────────────────────────┤
+  │ Installation      │ SDK download + driver   │ Package manager / installer      │
+  └───────────────────┴─────────────────────────┴──────────────────────────────────┘
+
+  <br />
+  Both achieve the same ~1.33ms audio latency at 64 samples / 48kHz. JACK is cross-platform and doesn't require a
+  proprietary SDK. <br />
+  <br />
+
+  Latency Budget (64 samples @ 48kHz, LAN) <br />
+
+  <br />
+
+  ┌───────────────────────────┬─────────────┐
+  │ Component                 │ Latency     │
+  ├───────────────────────────┼─────────────┤
+  │ JACK capture callback     │ 1.33 ms     │
+  ├───────────────────────────┼─────────────┤
+  │ CELT encode (algorithmic) │ 1.33 ms     │
+  ├───────────────────────────┼─────────────┤
+  │ UDP send → recv (LAN)     │ ~0.1–0.5 ms │
+  ├───────────────────────────┼─────────────┤
+  │ CELT decode (algorithmic) │ 1.33 ms     │
+  ├───────────────────────────┼─────────────┤
+  │ JACK playout callback     │ 1.33 ms     │
+  ├───────────────────────────┼─────────────┤
+  │ TOTAL one-way             │ ~5.5 ms     │
+  ├───────────────────────────┼─────────────┤
+  │ TOTAL round-trip          │ ~11 ms      │
+  └───────────────────────────┴─────────────┘
+
+  <br />
+
+  Prerequisites <br />
+
+  <br />
+
+  Linux (recommended) <br />
+
+  sudo apt install libjack-jackd2-dev cmake build-essential
+  # or
+  sudo pacman -S jack2 cmake base-devel
+
+  <br />
+
+  macOS <br />
+
+  brew install jack cmake
+
+  <br />
+
+  Windows <br />
+
+  <br />
+
+  1. Install JACK2 for Windows (https://jackaudio.org/downloads/) <br />
+  2. Set environment variable: JACK_DIR=C:\Program Files\JACK2 <br />
+  3. Install CMake and a C++ compiler (Visual Studio or MinGW) <br />
+
+  <br />
+
+  Build <br />
+
+  <br />
+
+  cd jack_voip
+  mkdir build && cd build
+  cmake ..
+  cmake --build . --config Release
+
+  <br />
+
+  Usage <br />
+
+  <br />
+
+  Test on localhost (two terminals) <br />
+
+  <br />
+
+  Terminal A: <br />
+
+  ./jack_voip --local-port 4464 --remote-port 4465
+
+  <br />
+
+  Terminal B: <br />
+
+  ./jack_voip --local-port 4465 --remote-port 4464 --name jack_voip_b
+
+  <br />
+
+  Connect over LAN <br />
+
+  <br />
+
+  Machine A (192.168.1.10): <br />
+
+  ./jack_voip --local-port 4464 --remote-port 4464 --remote-host 192.168.1.20
+
+  <br />
+
+  Machine B (192.168.1.20): <br />
+
+  ./jack_voip --local-port 4464 --remote-port 4464 --remote-host 192.168.1.10
+
+  <br />
+
+  Command Line Options <br />
+
+  <br />
+
+  ┌───────────────┬───────────┬────────────────────────────────┐
+  │ Option        │ Default   │ Description                    │
+  ├───────────────┼───────────┼────────────────────────────────┤
+  │ --local-port  │ 4464      │ Local UDP port to bind         │
+  ├───────────────┼───────────┼────────────────────────────────┤
+  │ --remote-port │ 4465      │ Remote UDP port to send to     │
+  ├───────────────┼───────────┼────────────────────────────────┤
+  │ --remote-host │ 127.0.0.1 │ Remote IP address              │
+  ├───────────────┼───────────┼────────────────────────────────┤
+  │ --bitrate     │ 128000    │ CELT bitrate in bps            │
+  ├───────────────┼───────────┼────────────────────────────────┤
+  │ --buffer-size │ 64        │ JACK buffer size hint (frames) │
+  ├───────────────┼───────────┼────────────────────────────────┤
+  │ --name        │ jack_voip │ JACK client name               │
+  └───────────────┴───────────┴────────────────────────────────┘
+
+  <br />
+
+  JACK Server Configuration <br />
+
+  <br />
+
+  For minimum latency, start JACK with small buffers: <br />
+
+  # 64 frames at 48kHz = 1.33ms per period
+  jackd -d alsa -r 48000 -p 64 -n 2
+
+  # Or with QjackCtl / Cadence GUI:
+  # Set: Sample Rate = 48000, Frames/Period = 64, Periods/Buffer = 2
+
+  <br />
+
+  On Windows, use JACK's ASIO backend for the same low-latency access to audio hardware. <br />
+  <br />
+
+  How It Compares to Browser-Based Solutions <br />
+
+  <br />
+
+ 
+  │ Browser (WebRTC)                         │ JACK VoIP (this app)               │
+  ├ ------------- | ------------┤
+  │ getUserMedia → OS mixer (10–20ms)        │ JACK callback → zero-copy (1.33ms) │
+  │ AudioContext output → OS mier (25–50ms) │ Direct to DAC via JACK (1.33ms)    │
+  │ WebRTC SCTP DataChannel (1–5ms)          │ Raw UDP socket (0.05ms)            │
+  │ WASM decode in event loop                │ Native C++ realtime thread         │
+  ├──────────────────────────────────────────┼────────────────────────────────────┤
+  │ Total: 60–100ms RTT                      │ Total: ~11ms RTT                   │
+  └──────────────────────────────────────────┴────────────────────────────────────┘
+
+  <br />
+
+  Troubleshooting <br />
+
+  <br />
+
+  - "Cannot initialize JACK. Is jackd running?" — Start the JACK server first (jackd or QjackCtl) <br />
+  - "Failed to create custom mode" — The frame size must be supported by Opus Custom. Use powers of 2: 32, 64, 128, 256.
+  <br />
+  - High packet loss — Check firewall rules. Ensure UDP ports are open. <br />
+  - Xruns (buffer underruns) — Increase buffer size (--buffer-size 128) or configure realtime priorities. <br />
+
+  <br />
+
+  License <br />
+
+  <br />
+  MIT <br />
+  
 
   Here's the adapted project structure using JACK instead of ASIO:
 
