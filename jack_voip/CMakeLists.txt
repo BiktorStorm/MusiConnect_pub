@@ -46,7 +46,7 @@
   include(FetchContent)
   FetchContent_Declare(
       opus
-      GIT_REPOSITORY https://gitlab.xiph.org/xiph/opus.git
+      GIT_REPOSITORY https://github.com/xiph/opus.git
       GIT_TAG        v1.5.2
   )
   set(OPUS_CUSTOM_MODES ON CACHE BOOL "Enable Opus Custom Modes (CELT)" FORCE)
