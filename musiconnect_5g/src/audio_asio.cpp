@@ -1,17 +1,17 @@
 #include "audio_asio.h"
-#include <iostream>
-#include <algorithm>
-#include <cstring>
-#include <vector>
 
 #ifdef USE_ASIO
 
 #include "asio.h"
 #include "asiodrivers.h"
+#include <iostream>
+#include <algorithm>
+#include <cstring>
+#include <vector>
 
-static AsioAudio::Impl* g_impl = nullptr;
+static AsioAudioDevice::Impl* g_impl = nullptr;
 
-struct AsioAudio::Impl {
+struct AsioAudioDevice::Impl {
     AudioConfig config;
     CaptureCallback captureCallback = nullptr;
     void* captureUserData = nullptr;
@@ -59,7 +59,6 @@ static void bufferSwitch(long idx, ASIOBool) {
     if (!g_impl || !g_impl->running) return;
     int n = g_impl->bufferSize;
 
-    // Capture input
     if (g_impl->captureCallback) {
         g_impl->tmpBuf.resize(n);
         void* inBuf = g_impl->bufInfos[0].buffers[idx];
@@ -69,7 +68,6 @@ static void bufferSwitch(long idx, ASIOBool) {
         g_impl->captured += n;
     }
 
-    // Playout output
     {
         g_impl->tmpBuf.resize(n);
         size_t got = g_impl->playoutBuf.read(g_impl->tmpBuf.data(), n);
@@ -90,10 +88,10 @@ static long asioMessage(long sel, long, void*, double*) {
 }
 static ASIOTime* bufferSwitchTimeInfo(ASIOTime* p, long, ASIOBool) { return p; }
 
-AsioAudio::AsioAudio() : m_impl(new Impl()) {}
-AsioAudio::~AsioAudio() { stop(); if (g_impl == m_impl) g_impl = nullptr; delete m_impl; }
+AsioAudioDevice::AsioAudioDevice() : m_impl(new Impl()) {}
+AsioAudioDevice::~AsioAudioDevice() { stop(); if (g_impl == m_impl) g_impl = nullptr; delete m_impl; }
 
-std::vector<std::string> AsioAudio::listDrivers() {
+std::vector<std::string> AsioAudioDevice::listDrivers() {
     std::vector<std::string> result;
     AsioDrivers drivers;
     char names[16][32];
@@ -104,7 +102,7 @@ std::vector<std::string> AsioAudio::listDrivers() {
     return result;
 }
 
-bool AsioAudio::init(const AudioConfig& config) {
+bool AsioAudioDevice::init(const AudioConfig& config) {
     m_impl->config = config;
     g_impl = m_impl;
 
@@ -144,7 +142,6 @@ bool AsioAudio::init(const AudioConfig& config) {
     if (ASIOCreateBuffers(m_impl->bufInfos, 2, m_impl->bufferSize, &m_impl->callbacks) != ASE_OK)
         return false;
 
-    // Size playout buffer: 6x ASIO buffer (tight but enough for 5G jitter)
     m_impl->playoutBuf = RingBuffer<float>(m_impl->bufferSize * 6);
 
     std::cout << "[ASIO] " << name << " @ " << config.sampleRate << "Hz, "
@@ -153,41 +150,31 @@ bool AsioAudio::init(const AudioConfig& config) {
     return true;
 }
 
-bool AsioAudio::start() {
+bool AsioAudioDevice::start() {
     m_impl->running = true;
     if (ASIOStart() != ASE_OK) { m_impl->running = false; return false; }
     return true;
 }
 
-void AsioAudio::stop() {
+void AsioAudioDevice::stop() {
     if (m_impl->running) { m_impl->running = false; ASIOStop(); ASIODisposeBuffers(); ASIOExit(); }
 }
 
-void AsioAudio::setCaptureCallback(CaptureCallback cb, void* ud) {
+void AsioAudioDevice::setCaptureCallback(CaptureCallback cb, void* ud) {
     m_impl->captureCallback = cb;
     m_impl->captureUserData = ud;
 }
 
-void AsioAudio::writePlayoutSamples(const float* samples, int count) {
+void AsioAudioDevice::writePlayoutSamples(const float* samples, int count) {
     m_impl->playoutBuf.write(samples, count);
 }
 
-int AsioAudio::getBufferSize() const { return m_impl->bufferSize; }
+int AsioAudioDevice::getBufferSize() const { return m_impl->bufferSize; }
 
-AsioAudio::Stats AsioAudio::getStats() const {
+AudioDevice::Stats AsioAudioDevice::getStats() const {
     return { m_impl->captured, m_impl->played, m_impl->underruns };
 }
 
-#else
-// Stub when ASIO SDK not available
-AsioAudio::AsioAudio() : m_impl(nullptr) {}
-AsioAudio::~AsioAudio() {}
-std::vector<std::string> AsioAudio::listDrivers() { return {}; }
-bool AsioAudio::init(const AudioConfig&) { std::cerr << "[ASIO] Not compiled with USE_ASIO\n"; return false; }
-bool AsioAudio::start() { return false; }
-void AsioAudio::stop() {}
-void AsioAudio::setCaptureCallback(CaptureCallback, void*) {}
-void AsioAudio::writePlayoutSamples(const float*, int) {}
-int AsioAudio::getBufferSize() const { return 0; }
-AsioAudio::Stats AsioAudio::getStats() const { return {}; }
-#endif
+AudioDevice* createAudioDevice() { return new AsioAudioDevice(); }
+
+#endif // USE_ASIO

@@ -1,6 +1,6 @@
 // MusiConnect 5G — Ultra low latency P2P audio
 //
-// Pipeline: ASIO capture -> CELT encode -> UDP send -> UDP recv -> CELT decode -> ASIO playout
+// Pipeline: Capture -> CELT encode -> UDP send -> UDP recv -> CELT decode -> Playout
 //
 // Latency budget (5G, same city):
 //   Capture:  1.33ms (64 samples)
@@ -10,7 +10,7 @@
 //   Playout:  1.33ms
 //   Total:    ~8-13ms one-way
 
-#include "audio_asio.h"
+#include "audio.h"
 #include "celt_codec.h"
 #include "network.h"
 
@@ -21,6 +21,7 @@
 #include <csignal>
 #include <vector>
 #include <chrono>
+#include <memory>
 
 static std::atomic<bool> g_running{true};
 static void onSignal(int) { g_running = false; }
@@ -32,7 +33,6 @@ struct AppContext {
     int maxEncBytes;
 };
 
-// Called from ASIO realtime thread — encode and send immediately
 static void captureCallback(const float* samples, int count, void* userData) {
     auto* ctx = static_cast<AppContext*>(userData);
     int encoded = ctx->encoder->encode(samples, ctx->encBuf.data(), ctx->maxEncBytes);
@@ -56,7 +56,6 @@ int main(int argc, char* argv[]) {
     netCfg.remoteHost = "127.0.0.1";
     netCfg.remotePort = 4465;
 
-    // Parse args
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--local-port" && i+1 < argc) netCfg.localPort = std::stoi(argv[++i]);
@@ -69,7 +68,8 @@ int main(int argc, char* argv[]) {
         else if (arg == "--bitrate" && i+1 < argc) celtCfg.bitrate = std::stoi(argv[++i]);
         else if (arg == "--driver" && i+1 < argc) audioCfg.driverName = argv[++i];
         else if (arg == "--list-drivers") {
-            for (auto& d : AsioAudio::listDrivers()) std::cout << "  " << d << "\n";
+            std::unique_ptr<AudioDevice> dev(createAudioDevice());
+            for (auto& d : dev->listDrivers()) std::cout << "  " << d << "\n";
             return 0;
         }
         else { std::cerr << "Unknown: " << arg << "\n"; return 1; }
@@ -85,11 +85,11 @@ int main(int argc, char* argv[]) {
     UdpTransport network;
     if (!network.init(netCfg)) return 1;
 
-    // Init audio
-    AsioAudio audio;
-    if (!audio.init(audioCfg)) return 1;
+    // Init audio (platform-specific via factory)
+    std::unique_ptr<AudioDevice> audio(createAudioDevice());
+    if (!audio->init(audioCfg)) return 1;
 
-    int bufSz = audio.getBufferSize();
+    int bufSz = audio->getBufferSize();
     if (bufSz != celtCfg.frameSize) {
         celtCfg.frameSize = bufSz;
         encoder = CeltCodec();
@@ -99,34 +99,33 @@ int main(int argc, char* argv[]) {
 
     // Wire capture -> encode -> send
     AppContext ctx{&encoder, &network, std::vector<uint8_t>(encoder.getEncodedSize() + 16), encoder.getEncodedSize() + 16};
-    audio.setCaptureCallback(captureCallback, &ctx);
+    audio->setCaptureCallback(captureCallback, &ctx);
 
-    // Wire receive -> decode -> playout (immediate, no buffer)
+    // Wire receive -> decode -> playout (immediate)
     std::vector<float> decodeBuf(celtCfg.frameSize);
     network.setReceiveCallback([&](const uint8_t* data, int len, uint32_t) {
         int decoded = decoder.decode(data, len, decodeBuf.data());
-        if (decoded > 0) audio.writePlayoutSamples(decodeBuf.data(), decoded);
+        if (decoded > 0) audio->writePlayoutSamples(decodeBuf.data(), decoded);
     });
 
     // Start
     network.start();
-    if (!audio.start()) return 1;
+    if (!audio->start()) return 1;
 
     double frameMs = (double)bufSz / audioCfg.sampleRate * 1000.0;
     std::cout << "\n[RUNNING] " << bufSz << " samples (" << frameMs << "ms) | "
               << netCfg.remoteHost << ":" << netCfg.remotePort << " | Ctrl+C to stop\n\n";
 
-    // Stats loop
     while (g_running) {
         std::this_thread::sleep_for(std::chrono::seconds(2));
         auto ns = network.getStats();
-        auto as = audio.getStats();
+        auto as = audio->getStats();
         std::cout << "\r  Sent:" << ns.sent << " Recv:" << ns.received
                   << " Lost:" << ns.lost << " Underruns:" << as.underruns << "   " << std::flush;
     }
 
     std::cout << "\nStopping...\n";
-    audio.stop();
+    audio->stop();
     network.stop();
     return 0;
 }

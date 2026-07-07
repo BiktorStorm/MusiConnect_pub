@@ -25,12 +25,22 @@ Ultra low latency P2P audio streaming for live instruments over 5G.
 
 ## Build
 
+### Windows (ASIO)
 ```bash
-# Requires: ASIO SDK in external/asio/, CMake 3.16+
+# Requires: ASIO SDK in external/asio/
 mkdir build && cd build
 cmake .. -DUSE_ASIO=ON
 cmake --build . --config Release
 ```
+
+### macOS (CoreAudio)
+```bash
+mkdir build && cd build
+cmake .. -DUSE_COREAUDIO=ON
+cmake --build . --config Release
+```
+
+No external SDK needed on macOS — CoreAudio is part of the system.
 
 ## Run
 

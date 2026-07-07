@@ -1,12 +1,12 @@
 #pragma once
 #include "audio.h"
 
-#ifdef USE_ASIO
+#ifdef USE_COREAUDIO
 
-class AsioAudioDevice : public AudioDevice {
+class CoreAudioDevice : public AudioDevice {
 public:
-    AsioAudioDevice();
-    ~AsioAudioDevice() override;
+    CoreAudioDevice();
+    ~CoreAudioDevice() override;
 
     std::vector<std::string> listDrivers() override;
     bool init(const AudioConfig& config) override;

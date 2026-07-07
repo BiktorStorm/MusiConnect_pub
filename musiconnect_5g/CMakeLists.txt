@@ -4,7 +4,12 @@ project(musiconnect_5g VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-option(USE_ASIO "Use ASIO audio (Windows)" ON)
+# Auto-detect platform
+if(WIN32)
+    option(USE_ASIO "Use ASIO audio (Windows)" ON)
+elseif(APPLE)
+    option(USE_COREAUDIO "Use CoreAudio (macOS)" ON)
+endif()
 
 # --- Opus with custom modes ---
 include(FetchContent)
@@ -17,7 +22,9 @@ set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(opus)
 
-# --- ASIO SDK ---
+# --- Platform audio sources ---
+set(AUDIO_SOURCES "")
+
 if(USE_ASIO)
     set(ASIO_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/asio")
     if(NOT EXISTS "${ASIO_SDK_DIR}/common/asio.h")
@@ -39,14 +46,20 @@ if(USE_ASIO)
     if(MSVC)
         target_link_libraries(asio_sdk PUBLIC ole32 uuid)
     endif()
+
+    list(APPEND AUDIO_SOURCES src/audio_asio.cpp)
+endif()
+
+if(USE_COREAUDIO)
+    list(APPEND AUDIO_SOURCES src/audio_coreaudio.cpp)
 endif()
 
 # --- Main executable ---
 add_executable(musiconnect_5g
     src/main.cpp
-    src/audio_asio.cpp
     src/celt_codec.cpp
     src/network.cpp
+    ${AUDIO_SOURCES}
 )
 
 target_include_directories(musiconnect_5g PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -55,6 +68,15 @@ target_link_libraries(musiconnect_5g PRIVATE opus)
 if(USE_ASIO)
     target_link_libraries(musiconnect_5g PRIVATE asio_sdk)
     target_compile_definitions(musiconnect_5g PRIVATE USE_ASIO=1)
+endif()
+
+if(USE_COREAUDIO)
+    target_link_libraries(musiconnect_5g PRIVATE
+        "-framework AudioToolbox"
+        "-framework CoreAudio"
+        "-framework CoreFoundation"
+    )
+    target_compile_definitions(musiconnect_5g PRIVATE USE_COREAUDIO=1)
 endif()
 
 if(WIN32)
