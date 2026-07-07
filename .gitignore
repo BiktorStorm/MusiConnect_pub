@@ -1,0 +1,11 @@
+# External SDKs (download separately, not redistributable)
+musiconnect_5g/external/
+
+# Build output
+build/
+cmake-build-*/
+
+# IDE
+.vs/
+.vscode/
+*.user
