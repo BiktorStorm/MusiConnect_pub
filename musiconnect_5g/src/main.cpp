@@ -24,6 +24,9 @@
 #include <memory>
 
 static std::atomic<bool> g_running{true};
+static std::atomic<bool> g_muteMic{false};
+static std::atomic<bool> g_muteSpk{false};
+
 static void onSignal(int) { g_running = false; }
 
 struct AppContext {
@@ -34,9 +37,24 @@ struct AppContext {
 };
 
 static void captureCallback(const float* samples, int count, void* userData) {
+    if (g_muteMic.load(std::memory_order_relaxed)) return;
     auto* ctx = static_cast<AppContext*>(userData);
     int encoded = ctx->encoder->encode(samples, ctx->encBuf.data(), ctx->maxEncBytes);
     if (encoded > 0) ctx->network->send(ctx->encBuf.data(), encoded);
+}
+
+static void printControls() {
+    std::cout << "\n"
+              << "  Controls:\n"
+              << "    m = toggle mic mute\n"
+              << "    s = toggle speaker mute\n"
+              << "    q = quit\n\n";
+}
+
+static void printStatus() {
+    std::cout << "  [MIC: " << (g_muteMic.load() ? "MUTED" : "LIVE")
+              << "]  [SPEAKER: " << (g_muteSpk.load() ? "MUTED" : "LIVE")
+              << "]\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -85,7 +103,7 @@ int main(int argc, char* argv[]) {
     UdpTransport network;
     if (!network.init(netCfg)) return 1;
 
-    // Init audio (platform-specific via factory)
+    // Init audio
     std::unique_ptr<AudioDevice> audio(createAudioDevice());
     if (!audio->init(audioCfg)) return 1;
 
@@ -101,9 +119,10 @@ int main(int argc, char* argv[]) {
     AppContext ctx{&encoder, &network, std::vector<uint8_t>(encoder.getEncodedSize() + 16), encoder.getEncodedSize() + 16};
     audio->setCaptureCallback(captureCallback, &ctx);
 
-    // Wire receive -> decode -> playout (immediate)
+    // Wire receive -> decode -> playout
     std::vector<float> decodeBuf(celtCfg.frameSize);
     network.setReceiveCallback([&](const uint8_t* data, int len, uint32_t) {
+        if (g_muteSpk.load(std::memory_order_relaxed)) return;
         int decoded = decoder.decode(data, len, decodeBuf.data());
         if (decoded > 0) audio->writePlayoutSamples(decodeBuf.data(), decoded);
     });
@@ -114,17 +133,34 @@ int main(int argc, char* argv[]) {
 
     double frameMs = (double)bufSz / audioCfg.sampleRate * 1000.0;
     std::cout << "\n[RUNNING] " << bufSz << " samples (" << frameMs << "ms) | "
-              << netCfg.remoteHost << ":" << netCfg.remotePort << " | Ctrl+C to stop\n\n";
+              << netCfg.remoteHost << ":" << netCfg.remotePort << "\n";
+    printControls();
+    printStatus();
 
+    // Input loop — handles keyboard commands on main thread
     while (g_running) {
-        std::this_thread::sleep_for(std::chrono::seconds(2));
-        auto ns = network.getStats();
-        auto as = audio->getStats();
-        std::cout << "\r  Sent:" << ns.sent << " Recv:" << ns.received
-                  << " Lost:" << ns.lost << " Underruns:" << as.underruns << "   " << std::flush;
+        // Non-blocking-ish: we use std::cin which blocks, but that's fine
+        // for the UI thread — audio runs independently
+        std::string input;
+        if (!std::getline(std::cin, input)) break;
+
+        if (input == "m") {
+            g_muteMic.store(!g_muteMic.load(), std::memory_order_relaxed);
+            printStatus();
+        } else if (input == "s") {
+            g_muteSpk.store(!g_muteSpk.load(), std::memory_order_relaxed);
+            printStatus();
+        } else if (input == "q") {
+            break;
+        } else if (input == "stats") {
+            auto ns = network.getStats();
+            auto as = audio->getStats();
+            std::cout << "  Sent:" << ns.sent << " Recv:" << ns.received
+                      << " Lost:" << ns.lost << " Underruns:" << as.underruns << "\n";
+        }
     }
 
-    std::cout << "\nStopping...\n";
+    std::cout << "Stopping...\n";
     audio->stop();
     network.stop();
     return 0;
