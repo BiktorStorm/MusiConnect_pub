@@ -104,21 +104,54 @@ def select_backend(direction):
     return {'backend': backend, 'device': device, 'extra_settings': extra_settings}
 
 
-def make_stream(direction, backend_info, samplerate, channels, dtype, blocksize):
-    """
-    Create an InputStream or OutputStream configured for low latency using
-    the selected backend. Returns the (unstarted) stream.
-    """
+def _open_stream(direction, device, samplerate, channels, dtype, blocksize, extra_settings):
     common = dict(
         samplerate=samplerate,
         channels=channels,
         dtype=dtype,
         blocksize=blocksize,
         latency='low',
-        device=backend_info['device'],
-        extra_settings=backend_info['extra_settings'],
+        device=device,
+        extra_settings=extra_settings,
     )
     if direction == 'input':
         return sd.InputStream(**common)
     else:
         return sd.OutputStream(**common)
+
+
+def make_stream(direction, backend_info, samplerate, channels, dtype, blocksize):
+    """
+    Create an InputStream or OutputStream configured for low latency.
+
+    For WASAPI, tries EXCLUSIVE mode first (lowest latency); if the device
+    rejects the requested format (common on stereo-only endpoints asked for
+    mono), automatically falls back to SHARED mode so the POC still runs.
+    Returns the (unstarted) stream.
+    """
+    device = backend_info['device']
+    backend = backend_info['backend']
+
+    # Build ordered list of (label, extra_settings) attempts
+    attempts = []
+    if backend == 'WASAPI-exclusive':
+        attempts.append(('WASAPI exclusive', sd.WasapiSettings(exclusive=True)))
+        attempts.append(('WASAPI shared', None))
+    elif backend == 'ASIO':
+        attempts.append(('ASIO', None))
+    else:
+        attempts.append(('default', None))
+
+    last_err = None
+    for label, extra in attempts:
+        try:
+            stream = _open_stream(direction, device, samplerate,
+                                  channels, dtype, blocksize, extra)
+            print(f"[backend] Stream opened via: {label}")
+            return stream
+        except sd.PortAudioError as e:
+            print(f"[backend] {label} failed ({e}); trying next option...")
+            last_err = e
+
+    # Nothing worked
+    raise last_err
