@@ -4,12 +4,13 @@ import time
 import signal
 import sounddevice as sd
 import numpy as np
+from low_latency_backend import select_backend, make_stream
 
 # =============================================================================
-# ASIO AUDIO SENDER — Uses sounddevice with ASIO for lowest latency
+# LOW-LATENCY AUDIO SENDER — auto-selects ASIO, else WASAPI-exclusive, else default
 #
 # Requires: pip install sounddevice numpy
-# Requires: ASIO driver installed (native or ASIO4ALL)
+# Best latency: ASIO driver installed (e.g. Focusrite). Falls back automatically.
 #
 # Packet: [seq (4B)] + [capture_timestamp (8B)] + [PCM audio (16-bit)]
 # =============================================================================
@@ -41,34 +42,11 @@ sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024)
 sock.bind(('0.0.0.0', LISTEN_PORT))
 sock.setblocking(False)
 
-# List available devices — look for ASIO ones
-print("=== Available Audio Devices ===")
-print(sd.query_devices())
-print()
+# List available devices and pick backend (ASIO > WASAPI-exclusive > default)
+backend_info = select_backend('input')
 
-# Filter ASIO devices
-asio_hostapi = None
-for i, api in enumerate(sd.query_hostapis()):
-    if 'ASIO' in api['name']:
-        asio_hostapi = i
-        break
-
-if asio_hostapi is not None:
-    print(f"ASIO host API found (index {asio_hostapi})")
-    asio_devices = [d for d in range(len(sd.query_devices()))
-                    if sd.query_devices(d)['hostapi'] == asio_hostapi]
-    print(f"ASIO devices: {[(d, sd.query_devices(d)['name']) for d in asio_devices]}")
-else:
-    print("WARNING: No ASIO host API found! Install ASIO4ALL or use an audio interface.")
-    print("Falling back to default device.\n")
-
-device_index = input("Select input device index (or press Enter for default): ").strip()
-device_index = int(device_index) if device_index else None
-
-if device_index is not None:
-    sd.default.device[0] = device_index
-
-print(f"\n[Sender] Frame: {FRAME_SIZE} samples ({FRAME_SIZE/RATE*1000:.1f}ms)")
+print(f"\n[Sender] Backend: {backend_info['backend']}")
+print(f"[Sender] Frame: {FRAME_SIZE} samples ({FRAME_SIZE/RATE*1000:.1f}ms)")
 print(f"[Sender] Sending to {RECEIVER_IP}:{RECEIVER_PORT}")
 print(f"[Sender] Press Ctrl+C to stop\n")
 
@@ -76,13 +54,9 @@ seq = 0
 rtt_list = []
 
 # Blocking capture loop using sounddevice InputStream
-stream = sd.InputStream(
-    samplerate=RATE,
-    channels=CHANNELS,
-    dtype='int16',
-    blocksize=FRAME_SIZE,
-    latency='low',
-)
+stream = make_stream('input', backend_info,
+                     samplerate=RATE, channels=CHANNELS,
+                     dtype='int16', blocksize=FRAME_SIZE)
 stream.start()
 
 try:

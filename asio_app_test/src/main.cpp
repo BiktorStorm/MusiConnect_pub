@@ -51,13 +51,95 @@
                 << "  --buffer-size N       ASIO buffer size in samples (default: 64)\n"
                 << "  --bitrate N           CELT bitrate in bps (default: 64000)\n"
                 << "  --driver NAME         ASIO driver name (default: first available)\n"
+                << "  --input-channel N     Input channel to capture from (default: 0)\n"
+                << "  --output-channel N    Output channel to play to (default: 0)\n"
+                << "  --interactive, -i     Interactively pick driver + input/output channels\n"
                 << "  --list-drivers        List available ASIO drivers and exit\n"
                 << "\n"
                 << "Example (two instances on localhost):\n"
                 << "  Instance A: musiconnect --local-port 4464 --remote-port 4465\n"
                 << "  Instance B: musiconnect --local-port 4465 --remote-port 4464\n"
+                << "\n"
+                << "Example (pick your Scarlett input/output interactively):\n"
+                << "  musiconnect --interactive --remote-host 192.168.1.42\n"
                 << std::endl;
   }
+
+  // Read an integer selection from stdin. Returns `def` on empty/invalid input,
+  // clamped to [0, count).
+  static int promptIndex(int count, int def) {
+      std::cout << "> " << std::flush;
+      std::string line;
+      std::getline(std::cin, line);
+      if (line.empty()) return def;
+      try {
+          int idx = std::stoi(line);
+          if (idx < 0 || idx >= count) {
+              std::cout << "  (out of range — using " << def << ")" << std::endl;
+              return def;
+          }
+          return idx;
+      } catch (...) {
+          std::cout << "  (invalid — using " << def << ")" << std::endl;
+          return def;
+      }
+  }
+
+  // Interactively select ASIO driver + input/output channel.
+  // Fills audioConfig.driverName / inputChannel / outputChannel.
+  // Returns false if no drivers found or channel query fails.
+  static bool runInteractiveSelection(AudioConfig& audioConfig) {
+      // --- 1. Pick driver ---
+      auto drivers = AsioAudioHandler::listDrivers();
+      if (drivers.empty()) {
+          std::cerr << "No ASIO drivers found.\n"
+                    << "Make sure your audio interface is connected and its ASIO driver is installed."
+                    << std::endl;
+          return false;
+      }
+
+      std::cout << "\n=== Select ASIO driver ===" << std::endl;
+      for (size_t i = 0; i < drivers.size(); i++)
+          std::cout << "  [" << i << "] " << drivers[i] << std::endl;
+
+      size_t driverIdx = 0;
+      if (drivers.size() == 1) {
+          std::cout << "  (only one driver — auto-selected)" << std::endl;
+      } else {
+          driverIdx = (size_t)promptIndex((int)drivers.size(), 0);
+      }
+      audioConfig.driverName = drivers[driverIdx];
+
+      // --- 2. Query that driver's channels ---
+      auto channels = AsioAudioHandler::queryChannels(audioConfig.driverName);
+      if (!channels.success) {
+          std::cerr << "Failed to query channels for driver: " << audioConfig.driverName << std::endl;
+          return false;
+      }
+
+      // --- 3. Pick input channel (audio source) ---
+      std::cout << "\n=== Select INPUT channel (audio source) ===" << std::endl;
+      for (size_t i = 0; i < channels.inputs.size(); i++)
+          std::cout << "  [" << i << "] " << channels.inputs[i] << std::endl;
+      audioConfig.inputChannel = promptIndex((int)channels.inputs.size(), 0);
+
+      // --- 4. Pick output channel (playback destination) ---
+      std::cout << "\n=== Select OUTPUT channel (playback destination) ===" << std::endl;
+      for (size_t i = 0; i < channels.outputs.size(); i++)
+          std::cout << "  [" << i << "] " << channels.outputs[i] << std::endl;
+      audioConfig.outputChannel = promptIndex((int)channels.outputs.size(), 0);
+
+      // --- Confirm ---
+      std::cout << "\nSelected:" << std::endl;
+      std::cout << "  Driver: " << audioConfig.driverName << std::endl;
+      std::cout << "  Input:  [" << audioConfig.inputChannel << "] "
+                << channels.inputs[audioConfig.inputChannel] << std::endl;
+      std::cout << "  Output: [" << audioConfig.outputChannel << "] "
+                << channels.outputs[audioConfig.outputChannel] << std::endl;
+      std::cout << std::endl;
+      return true;
+  }
+
 
   int main(int argc, char* argv[]) {
       // Defaults
@@ -77,6 +159,8 @@
       netConfig.remoteHost = "127.0.0.1";
       netConfig.remotePort = 4465;
 
+      bool interactive = false;
+
       // Parse command line
       for (int i = 1; i < argc; i++) {
           std::string arg = argv[i];
@@ -90,6 +174,9 @@
               if (drivers.empty()) std::cout << "  (none found)" << std::endl;
               return 0;
           }
+          else if (arg == "--interactive" || arg == "-i") interactive = true;
+          else if (arg == "--input-channel" && i+1 < argc) audioConfig.inputChannel = std::stoi(argv[++i]);
+          else if (arg == "--output-channel" && i+1 < argc) audioConfig.outputChannel = std::stoi(argv[++i]);
           else if (arg == "--local-port" && i+1 < argc) netConfig.localPort = std::stoi(argv[++i]);
           else if (arg == "--remote-host" && i+1 < argc) netConfig.remoteHost = argv[++i];
           else if (arg == "--remote-port" && i+1 < argc) netConfig.remotePort = std::stoi(argv[++i]);
@@ -104,6 +191,14 @@
 
       // Handle Ctrl+C gracefully
       signal(SIGINT, signalHandler);
+
+      // Interactive driver + channel selection (fills driverName / input / output)
+      if (interactive) {
+          if (!runInteractiveSelection(audioConfig)) {
+              std::cerr << "Interactive selection failed — aborting." << std::endl;
+              return 1;
+          }
+      }
 
       std::cout << "╔══════════════════════════════════════════════════════╗" << std::endl;
       std::cout << "║  MusiConnect — Ultra Low Latency P2P Audio          ║" << std::endl;

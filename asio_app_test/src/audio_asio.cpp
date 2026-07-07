@@ -221,6 +221,65 @@
       return result;
   }
 
+  AsioAudioHandler::ChannelList AsioAudioHandler::queryChannels(const std::string& driverName) {
+      ChannelList result;
+
+      AsioDrivers drivers;
+      char name[64];
+      strncpy(name, driverName.c_str(), 63);
+      name[63] = '\0';
+
+      if (!drivers.loadDriver(name)) {
+          std::cerr << "[ASIO] queryChannels: failed to load driver: " << name << std::endl;
+          return result;  // success = false
+      }
+
+      // Initialize just enough to enumerate channels
+      ASIODriverInfo info{};
+      info.asioVersion = 2;
+      info.sysRef = nullptr;
+      if (ASIOInit(&info) != ASE_OK) {
+          std::cerr << "[ASIO] queryChannels: ASIOInit failed: " << info.errorMessage << std::endl;
+          drivers.removeCurrentDriver();
+          return result;
+      }
+
+      long numInputs = 0, numOutputs = 0;
+      if (ASIOGetChannels(&numInputs, &numOutputs) != ASE_OK) {
+          std::cerr << "[ASIO] queryChannels: ASIOGetChannels failed" << std::endl;
+          ASIOExit();
+          drivers.removeCurrentDriver();
+          return result;
+      }
+
+      for (long i = 0; i < numInputs; i++) {
+          ASIOChannelInfo ci{};
+          ci.channel = i;
+          ci.isInput = ASIOTrue;
+          if (ASIOGetChannelInfo(&ci) == ASE_OK)
+              result.inputs.emplace_back(ci.name);
+          else
+              result.inputs.emplace_back("Input " + std::to_string(i));
+      }
+
+      for (long i = 0; i < numOutputs; i++) {
+          ASIOChannelInfo ci{};
+          ci.channel = i;
+          ci.isInput = ASIOFalse;
+          if (ASIOGetChannelInfo(&ci) == ASE_OK)
+              result.outputs.emplace_back(ci.name);
+          else
+              result.outputs.emplace_back("Output " + std::to_string(i));
+      }
+
+      // Release the driver so init() can load it cleanly afterwards
+      ASIOExit();
+      drivers.removeCurrentDriver();
+
+      result.success = true;
+      return result;
+  }
+
   bool AsioAudioHandler::init(const AudioConfig& config) {
       m_impl->config = config;
       g_impl = m_impl;
@@ -386,6 +445,7 @@
   AsioAudioHandler::AsioAudioHandler() : m_impl(nullptr) {}
   AsioAudioHandler::~AsioAudioHandler() {}
   std::vector<std::string> AsioAudioHandler::listDrivers() { return {}; }
+  AsioAudioHandler::ChannelList AsioAudioHandler::queryChannels(const std::string&) { return {}; }
   bool AsioAudioHandler::init(const AudioConfig&) { return false; }
   bool AsioAudioHandler::start() { return false; }
   void AsioAudioHandler::stop() {}

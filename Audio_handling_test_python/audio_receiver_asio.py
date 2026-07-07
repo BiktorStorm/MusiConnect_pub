@@ -4,12 +4,13 @@ import time
 import signal
 import sounddevice as sd
 import numpy as np
+from low_latency_backend import select_backend, make_stream
 
 # =============================================================================
-# ASIO AUDIO RECEIVER — Uses sounddevice with ASIO for lowest latency
+# LOW-LATENCY AUDIO RECEIVER — auto-selects ASIO, else WASAPI-exclusive, else default
 #
 # Requires: pip install sounddevice numpy
-# Requires: ASIO driver installed (native or ASIO4ALL)
+# Best latency: ASIO driver installed (e.g. Focusrite). Falls back automatically.
 #
 # Plays immediately — no jitter buffer. Measures true end-to-end latency.
 # Packet: [seq (4B)] + [capture_timestamp (8B)] + [PCM audio (16-bit)]
@@ -47,45 +48,18 @@ sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
 sock.settimeout(1.0)
 sock.bind((IP, PORT))
 
-# List available devices
-print("=== Available Audio Devices ===")
-print(sd.query_devices())
-print()
+# List available devices and pick backend (ASIO > WASAPI-exclusive > default)
+backend_info = select_backend('output')
 
-# Filter ASIO devices
-asio_hostapi = None
-for i, api in enumerate(sd.query_hostapis()):
-    if 'ASIO' in api['name']:
-        asio_hostapi = i
-        break
-
-if asio_hostapi is not None:
-    print(f"ASIO host API found (index {asio_hostapi})")
-    asio_devices = [d for d in range(len(sd.query_devices()))
-                    if sd.query_devices(d)['hostapi'] == asio_hostapi]
-    print(f"ASIO devices: {[(d, sd.query_devices(d)['name']) for d in asio_devices]}")
-else:
-    print("WARNING: No ASIO host API found! Install ASIO4ALL or use an audio interface.")
-    print("Falling back to default device.\n")
-
-device_index = input("Select output device index (or press Enter for default): ").strip()
-device_index = int(device_index) if device_index else None
-
-if device_index is not None:
-    sd.default.device[1] = device_index
-
-print(f"\n[Receiver] Frame: {FRAME_SIZE} samples ({FRAME_SIZE/RATE*1000:.1f}ms)")
+print(f"\n[Receiver] Backend: {backend_info['backend']}")
+print(f"[Receiver] Frame: {FRAME_SIZE} samples ({FRAME_SIZE/RATE*1000:.1f}ms)")
 print(f"[Receiver] No jitter buffer — immediate playback")
 print(f"[Receiver] Press Ctrl+C to stop\n")
 
 # Output stream
-stream = sd.OutputStream(
-    samplerate=RATE,
-    channels=CHANNELS,
-    dtype='int16',
-    blocksize=FRAME_SIZE,
-    latency='low',
-)
+stream = make_stream('output', backend_info,
+                     samplerate=RATE, channels=CHANNELS,
+                     dtype='int16', blocksize=FRAME_SIZE)
 stream.start()
 
 packets_received = 0

@@ -42,6 +42,18 @@
       // List available ASIO drivers
       static std::vector<std::string> listDrivers();
 
+      // Channel names for a driver (input + output)
+      struct ChannelList {
+          std::vector<std::string> inputs;
+          std::vector<std::string> outputs;
+          bool success = false;
+      };
+
+      // Query the input/output channel names for a specific driver.
+      // Loads + initializes the driver, enumerates channels, then releases it.
+      // Safe to call before init() — it fully cleans up after itself.
+      static ChannelList queryChannels(const std::string& driverName);
+
       // Initialize with config
       bool init(const AudioConfig& config);
 
