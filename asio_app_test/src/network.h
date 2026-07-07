@@ -3,18 +3,22 @@
   // =============================================================================
   // UDP NETWORK TRANSPORT
   //
-  // Peer-to-peer UDP transport for live audio frames over 5G.
+  // Simple peer-to-peer UDP transport for audio frames.
   //
-  // Design choices for minimum latency:
-  //   - Raw UDP (no TCP, no retransmission, no ordering, no jitter buffer)
-  //   - Minimal packet header (4-byte sequence number for loss detection)
-  //   - Non-blocking I/O with receive thread pinned to a dedicated CPU core
-  //   - DSCP EF marking for 5G QoS prioritization
-  //   - Immediate playout — no buffering, accept rare glitches
+  // Design choices for low latency:
+  //   - Raw UDP (no TCP, no retransmission, no ordering guarantees)
+  //   - Minimal packet header (just a sequence number for loss detection)
+  //   - Non-blocking I/O with a receive thread
+  //   - UDP hole punching for NAT traversal
   //
   // Packet format:
   //   [0..3]  uint32_t sequence number (for loss detection, not reordering)
   //   [4..N]  encoded audio frame (CELT payload)
+  //
+  // NAT Traversal (hole punching):
+  //   Both peers send packets to each other's public IP:port.
+  //   The first few packets may be lost (NAT hasn't opened yet), but once
+  //   one gets through, the NAT "remembers" the mapping and allows traffic.
   // =============================================================================
 
   #include <cstdint>

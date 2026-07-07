@@ -93,11 +93,6 @@
       setsockopt(m_socket, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<char*>(&bufSize), sizeof(bufSize));
       setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<char*>(&bufSize), sizeof(bufSize));
 
-      // DSCP EF (Expedited Forwarding) — marks packets as real-time traffic
-      // 5G networks with QoS support will prioritize these packets
-      int dscp = 46 << 2;  // EF = 46, shift left 2 for TOS field
-      setsockopt(m_socket, IPPROTO_IP, IP_TOS, reinterpret_cast<char*>(&dscp), sizeof(dscp));
-
       std::cout << "[NET] Bound to port " << config.localPort
                 << ", remote: " << config.remoteHost << ":" << config.remotePort << std::endl;
 
@@ -107,19 +102,7 @@
   bool UdpTransport::start() {
       m_running = true;
       m_receiveThread = std::thread(&UdpTransport::receiveLoop, this);
-
-      // Pin receive thread to CPU core 1 to avoid context-switch latency
-  #ifdef _WIN32
-      SetThreadAffinityMask(m_receiveThread.native_handle(), 1ULL << 1);
-      SetThreadPriority(m_receiveThread.native_handle(), THREAD_PRIORITY_TIME_CRITICAL);
-  #else
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      CPU_SET(1, &cpuset);
-      pthread_setaffinity_np(m_receiveThread.native_handle(), sizeof(cpuset), &cpuset);
-  #endif
-
-      std::cout << "[NET] Receive thread started (pinned to core 1, realtime priority)" << std::endl;
+      std::cout << "[NET] Receive thread started" << std::endl;
       return true;
   }
 
