@@ -92,6 +92,12 @@ try:
         # Echo header back for RTT
         sock.sendto(data[:HEADER_SIZE], (addr[0], SENDER_LISTEN_PORT))
 
+        # --- Playout level meter (proves real audio is being received & played) ---
+        if packets_received % 100 == 0:  # ~5x/sec
+            peak = np.abs(audio_array).max() / 32768.0
+            bars = int(peak * 40)
+            print(f"  [OUT] {'#' * bars:<40} {peak:5.3f}  (recv {packets_received} pkts)")
+
         # Stats every ~1 second
         if packets_received % 500 == 0:
             recent = latency_log[-500:]

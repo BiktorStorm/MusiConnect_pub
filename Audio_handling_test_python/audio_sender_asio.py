@@ -74,6 +74,12 @@ try:
         sock.sendto(header + audio_data.tobytes(), (RECEIVER_IP, RECEIVER_PORT))
         seq += 1
 
+        # --- Capture level meter (proves real audio is being captured & sent) ---
+        if seq % 100 == 0:  # ~5x/sec at 96-sample frames
+            peak = np.abs(audio_data).max() / 32768.0
+            bars = int(peak * 40)
+            print(f"  [IN ] {'#' * bars:<40} {peak:5.3f}  (sent {seq} pkts)")
+
         # Check for RTT pongs
         try:
             while True:
