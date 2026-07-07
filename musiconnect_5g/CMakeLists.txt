@@ -15,7 +15,7 @@ endif()
 include(FetchContent)
 FetchContent_Declare(opus
     GIT_REPOSITORY https://github.com/xiph/opus.git
-    GIT_TAG        v1.4
+    GIT_TAG        v1.5.2
 )
 set(OPUS_CUSTOM_MODES ON CACHE BOOL "" FORCE)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
