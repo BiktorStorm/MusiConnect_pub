@@ -5,22 +5,20 @@
   // This ties together:
   //   1. ASIO audio (capture + playout at 64 samples = 1.33ms)
   //   2. CELT codec (encode/decode with zero algorithmic delay)
-  //   3. UDP transport (send/receive with no retransmission)
+  //   3. UDP transport (send/receive with no retransmission, no jitter buffer)
   //
   // DATA FLOW:
   //   ASIO capture callback → CELT encode → UDP send →
-  //   → UDP receive → CELT decode → ASIO playout ring buffer
+  //   → UDP receive → CELT decode → ASIO playout (immediate)
   //
-  // LATENCY BUDGET (localhost):
-  //   Capture:  1.33ms (64 samples)
+  // LATENCY BUDGET (5G, same city):
+  //   Capture:  1.33ms (64 samples @ 48kHz)
   //   Encode:   ~0.05ms
-  //   Network:  ~0.1ms (localhost)
+  //   Network:  ~5-10ms (5G one-way)
   //   Decode:   ~0.05ms
   //   Playout:  1.33ms (64 samples)
   //   ─────────────────────────
-  //   TOTAL:    ~3ms
-  //
-  // With a real network (LAN): add RTT/2 (~0.5ms LAN, 5-50ms internet)
+  //   TOTAL:    ~8-13ms one-way
   // =============================================================================
 
   #include "audio_asio.h"
@@ -176,26 +174,14 @@
           }
       });
 
-      // RECEIVE → DECODE → PLAYOUT
-      // Decode buffer
+      // RECEIVE → DECODE → PLAYOUT (immediate, no jitter buffer)
       std::vector<float> decodeBuffer(celtConfig.frameSize * celtConfig.channels);
-      uint32_t lastRecvSeq = 0;
 
-      network.setReceiveCallback([&](const uint8_t* data, int length, uint32_t seq) {
-          // Check for packet loss — use PLC for missing frames
-          if (lastRecvSeq > 0 && seq > lastRecvSeq + 1) {
-              int lost = seq - lastRecvSeq - 1;
-              for (int i = 0; i < lost && i < 3; i++) {  // Max 3 PLC frames
-                  decoder.decodePLC(decodeBuffer.data());
-                  audio.writePlayoutSamples(decodeBuffer.data(), celtConfig.frameSize);
-              }
-          }
-          lastRecvSeq = seq;
-
-          // Decode received frame
+      network.setReceiveCallback([&](const uint8_t* data, int length, uint32_t /*seq*/) {
+          // Decode and play immediately — no buffering, no PLC
+          // On 5G the jitter is low enough that this works without glitches
           int decoded = decoder.decode(data, length, decodeBuffer.data());
           if (decoded > 0) {
-              // Write to ASIO playout buffer
               audio.writePlayoutSamples(decodeBuffer.data(), decoded);
           }
       });
