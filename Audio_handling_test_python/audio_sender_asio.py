@@ -2,100 +2,102 @@ import socket
 import struct
 import time
 import signal
+import threading
 import sounddevice as sd
 import numpy as np
-from low_latency_backend import select_backend, make_stream
+from low_latency_backend import select_backend, open_stream
 
 # =============================================================================
-# LOW-LATENCY AUDIO SENDER — auto-selects ASIO, else WASAPI-exclusive, else default
+# LOW-LATENCY AUDIO SENDER — callback-driven capture
+#
+# The audio hardware calls `capture_callback` on its own realtime thread each
+# time a block of samples is ready. We send that block immediately over UDP.
+# This gives stable, hardware-timed capture instead of a Python polling loop.
 #
 # Requires: pip install sounddevice numpy
-# Best latency: ASIO driver installed (e.g. Focusrite). Falls back automatically.
+# Auto-selects ASIO > WASAPI-exclusive > shared (see low_latency_backend.py).
 #
 # Packet: [seq (4B)] + [capture_timestamp (8B)] + [PCM audio (16-bit)]
 # =============================================================================
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-# =============================================================================
-# CONNECTION — Uncomment ONE of the two blocks below
-# =============================================================================
-
-# --- LOCALHOST (same machine) ---
+# --- Connection ---
 RECEIVER_IP = '127.0.0.1'
 RECEIVER_PORT = 12345
 LISTEN_PORT = 12346
 
-# --- LAN (another computer on the same network) ---
-# RECEIVER_IP = '192.168.1.XXX'  # <-- replace with receiver's local IP (run ipconfig on that machine)
-# RECEIVER_PORT = 12345
-# LISTEN_PORT = 12346
-
-# Audio settings
+# --- Audio settings (must match receiver) ---
 RATE = 48000
 CHANNELS = 1
-FRAME_SIZE = 96  # 2ms at 48kHz. Try 64 (1.3ms) or 128 (2.7ms)
+FRAME_SIZE = 96  # 2ms at 48kHz
 
 # Setup socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024)
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1 << 16)
 sock.bind(('0.0.0.0', LISTEN_PORT))
 sock.setblocking(False)
 
-# List available devices and pick backend (ASIO > WASAPI-exclusive > default)
 backend_info = select_backend('input')
 
-print(f"\n[Sender] Backend: {backend_info['backend']}")
+# Shared state (written from the audio callback, read from main thread)
+seq = 0
+last_peak = 0.0
+running = True
+
+
+def capture_callback(indata, frames, time_info, status):
+    """Called by the audio hardware thread with `frames` samples of input."""
+    global seq, last_peak
+    if status:
+        # e.g. input overflow — audio thread couldn't keep up
+        pass
+    t = time.perf_counter()
+    header = struct.pack('<Id', seq, t)
+    try:
+        sock.sendto(header + indata.tobytes(), (RECEIVER_IP, RECEIVER_PORT))
+    except OSError:
+        pass
+    seq += 1
+    # Cheap peak for the meter (max abs sample, normalized)
+    last_peak = float(np.abs(indata).max()) / 32768.0
+
+
+stream, backend_label = open_stream(
+    'input', backend_info,
+    samplerate=RATE, channels=CHANNELS, dtype='int16',
+    blocksize=FRAME_SIZE, latency='low', callback=capture_callback,
+)
+
+print(f"\n[Sender] Backend: {backend_label}")
 print(f"[Sender] Frame: {FRAME_SIZE} samples ({FRAME_SIZE/RATE*1000:.1f}ms)")
 print(f"[Sender] Sending to {RECEIVER_IP}:{RECEIVER_PORT}")
 print(f"[Sender] Press Ctrl+C to stop\n")
 
-seq = 0
 rtt_list = []
-
-# Blocking capture loop using sounddevice InputStream
-stream = make_stream('input', backend_info,
-                     samplerate=RATE, channels=CHANNELS,
-                     dtype='int16', blocksize=FRAME_SIZE)
 stream.start()
 
 try:
     while True:
-        # Read one frame (blocks until FRAME_SIZE samples are captured)
-        audio_data, overflowed = stream.read(FRAME_SIZE)
-        if overflowed:
-            pass  # frame was late, but keep going
-
-        # Timestamp after capture
-        t = time.perf_counter()
-
-        # Send: header + raw PCM bytes
-        header = struct.pack('<Id', seq, t)
-        sock.sendto(header + audio_data.tobytes(), (RECEIVER_IP, RECEIVER_PORT))
-        seq += 1
-
-        # --- Capture level meter (proves real audio is being captured & sent) ---
-        if seq % 100 == 0:  # ~5x/sec at 96-sample frames
-            peak = np.abs(audio_data).max() / 32768.0
-            bars = int(peak * 40)
-            print(f"  [IN ] {'#' * bars:<40} {peak:5.3f}  (sent {seq} pkts)")
-
-        # Check for RTT pongs
+        # Drain RTT pongs (non-blocking) and print meter — off the audio thread
         try:
             while True:
                 data, _ = sock.recvfrom(64)
                 pong_seq, t_sent = struct.unpack('<Id', data)
                 rtt = (time.perf_counter() - t_sent) * 1000
                 rtt_list.append(rtt)
-                if len(rtt_list) % 200 == 0:
-                    avg = sum(rtt_list[-200:]) / 200
-                    print(f"  [RTT] last 200 avg: {avg:.2f}ms | latest: {rtt:.2f}ms")
-        except (BlockingIOError, ConnectionResetError):
+        except (BlockingIOError, ConnectionResetError, OSError):
             pass
+
+        bars = int(last_peak * 40)
+        rtt_txt = f"RTT ~{sum(rtt_list[-100:])/len(rtt_list[-100:]):.1f}ms" if rtt_list else "RTT --"
+        print(f"  [IN ] {'#' * bars:<40} {last_peak:5.3f}  sent={seq}  {rtt_txt}")
+        time.sleep(0.2)
 
 except KeyboardInterrupt:
     pass
 
+running = False
 stream.stop()
 stream.close()
 sock.close()

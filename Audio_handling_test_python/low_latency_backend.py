@@ -104,35 +104,21 @@ def select_backend(direction):
     return {'backend': backend, 'device': device, 'extra_settings': extra_settings}
 
 
-def _open_stream(direction, device, samplerate, channels, dtype, blocksize, extra_settings):
-    common = dict(
-        samplerate=samplerate,
-        channels=channels,
-        dtype=dtype,
-        blocksize=blocksize,
-        latency='low',
-        device=device,
-        extra_settings=extra_settings,
-    )
-    if direction == 'input':
-        return sd.InputStream(**common)
-    else:
-        return sd.OutputStream(**common)
-
-
-def make_stream(direction, backend_info, samplerate, channels, dtype, blocksize):
+def open_stream(direction, backend_info, **stream_kwargs):
     """
-    Create an InputStream or OutputStream configured for low latency.
+    Open an Input/OutputStream with automatic backend fallback.
+
+    `stream_kwargs` are passed straight to sd.InputStream / sd.OutputStream —
+    e.g. samplerate, channels, dtype, blocksize, latency, callback.
 
     For WASAPI, tries EXCLUSIVE mode first (lowest latency); if the device
-    rejects the requested format (common on stereo-only endpoints asked for
-    mono), automatically falls back to SHARED mode so the POC still runs.
-    Returns the (unstarted) stream.
+    rejects the requested format, falls back to SHARED mode so the POC still runs.
+
+    Returns (stream, label).
     """
     device = backend_info['device']
     backend = backend_info['backend']
 
-    # Build ordered list of (label, extra_settings) attempts
     attempts = []
     if backend == 'WASAPI-exclusive':
         attempts.append(('WASAPI exclusive', sd.WasapiSettings(exclusive=True)))
@@ -142,16 +128,90 @@ def make_stream(direction, backend_info, samplerate, channels, dtype, blocksize)
     else:
         attempts.append(('default', None))
 
+    cls = sd.InputStream if direction == 'input' else sd.OutputStream
+
     last_err = None
     for label, extra in attempts:
         try:
-            stream = _open_stream(direction, device, samplerate,
-                                  channels, dtype, blocksize, extra)
+            stream = cls(device=device, extra_settings=extra, **stream_kwargs)
             print(f"[backend] Stream opened via: {label}")
-            return stream
+            return stream, label
         except sd.PortAudioError as e:
             print(f"[backend] {label} failed ({e}); trying next option...")
             last_err = e
 
-    # Nothing worked
     raise last_err
+
+
+def make_stream(direction, backend_info, samplerate, channels, dtype, blocksize):
+    """Backward-compatible blocking-stream opener (no callback)."""
+    stream, _ = open_stream(
+        direction, backend_info,
+        samplerate=samplerate, channels=channels, dtype=dtype,
+        blocksize=blocksize, latency='low',
+    )
+    return stream
+
+
+# =============================================================================
+# Jitter buffer — decouples the network from the audio clock.
+#
+# The network thread pushes received frames in; the audio callback pulls
+# fixed-size blocks out. A small target fill (prebuffer) absorbs network jitter
+# so the output callback rarely underruns (which is what causes the crackle/
+# distortion). Latency is bounded by `max_ms` so it can't balloon.
+# =============================================================================
+
+import threading
+import numpy as np
+
+
+class JitterBuffer:
+    def __init__(self, channels, rate, target_ms=25, max_ms=120, dtype=np.int16):
+        self.channels = channels
+        self.dtype = dtype
+        self.lock = threading.Lock()
+        self.buf = np.zeros((0, channels), dtype=dtype)
+        self.target = int(rate * target_ms / 1000)
+        self.max = int(rate * max_ms / 1000)
+        self.filling = True   # (re)buffering until we reach target
+        self.underruns = 0
+        self.overflows = 0
+
+    def push(self, frame):
+        """frame: np.ndarray shape (n, channels), same dtype."""
+        with self.lock:
+            self.buf = np.concatenate((self.buf, frame), axis=0)
+            if len(self.buf) > self.max:
+                # Drop oldest to bound latency
+                drop = len(self.buf) - self.max
+                self.buf = self.buf[drop:]
+                self.overflows += 1
+
+    def pull(self, n):
+        """Return exactly n frames (n, channels), zero-filled on underrun."""
+        with self.lock:
+            if self.filling:
+                if len(self.buf) < self.target:
+                    return np.zeros((n, self.channels), dtype=self.dtype)
+                self.filling = False  # enough buffered, start playing
+
+            if len(self.buf) >= n:
+                out = self.buf[:n].copy()
+                self.buf = self.buf[n:]
+                return out
+
+            # Underrun: hand back what we have + silence, then re-buffer
+            out = np.zeros((n, self.channels), dtype=self.dtype)
+            have = len(self.buf)
+            if have:
+                out[:have] = self.buf
+            self.buf = np.zeros((0, self.channels), dtype=self.dtype)
+            self.underruns += 1
+            self.filling = True
+            return out
+
+    def fill_frames(self):
+        with self.lock:
+            return len(self.buf)
+
