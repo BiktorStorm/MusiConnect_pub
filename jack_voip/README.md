@@ -209,6 +209,9 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
   On Windows, use JACK's ASIO backend for the same low-latency access to audio hardware. <br />
   <br />
   Troubleshooting: <br /> 
+  How to diagnose crash, fetch exit code: 
+  .\Release\jack_voip.exe --local-port 4464 --remote-port 4465; Write-Host "Exit code: $LASTEXITCODE" 
+  
   Why jack_voip connects then disappears
 
   The connection graph change followed by connection change pattern (09:16:52 → 09:16:57) suggests jack_voip registers,
