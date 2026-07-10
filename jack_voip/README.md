@@ -127,7 +127,7 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
 
   <br />
 
-  Run (PowerShell):
+  Run (PowerShell) in the subfolder build:
 
   # Terminal A:
   .\Release\jack_voip.exe --local-port 4464 --remote-port 4465
