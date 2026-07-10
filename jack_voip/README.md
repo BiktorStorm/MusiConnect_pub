@@ -128,6 +128,9 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
   <br />
 
   Run (PowerShell) in the subfolder build:
+  Set commands: <br />
+  set JACK_DEFAULT_SERVER=default <br /> 
+  set PATH=C:\Program Files\JACK2 <br />  
 
   # Terminal A:
   .\Release\jack_voip.exe --local-port 4464 --remote-port 4465
@@ -213,10 +216,10 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
   message printed before it exits. Common reasons: <br />
 
   1. Port mismatch — jack_voip might expect a specific number of channels that doesn't match your 18-channel Focusrite
-  setup <br />
+  setup, unlikely though since problem persists without Focusrite  <br />
   2. Immediate send failure — it tries to send to the remote port immediately and crashes when nothing is listening yet <br />
   3. Sample rate or buffer size mismatch — the client expects different parameters <br />
- 
+
   How It Compares to Browser-Based Solutions <br />
 
   <br />
