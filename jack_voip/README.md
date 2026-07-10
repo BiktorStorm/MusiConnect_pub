@@ -193,7 +193,7 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
 
   <br />
 
-  For minimum latency, start JACK with small buffers: <br />
+  For minimum latency, start JACK with small buffers: Or higher buffer at a start <br />
 
   # 64 frames at 48kHz = 1.33ms per period
   jackd -d alsa -r 48000 -p 64 -n 2
@@ -205,7 +205,18 @@ Same as asio app but with JACK. Should work for linux, iOS and Windows. <br />
 
   On Windows, use JACK's ASIO backend for the same low-latency access to audio hardware. <br />
   <br />
+  Troubleshooting: <br /> 
+  Why jack_voip connects then disappears
 
+  The connection graph change followed by connection change pattern (09:16:52 → 09:16:57) suggests jack_voip registers,
+  creates ports, then crashes or exits. Check the terminal where you launched jack_voip — there should be an error
+  message printed before it exits. Common reasons: <br />
+
+  1. Port mismatch — jack_voip might expect a specific number of channels that doesn't match your 18-channel Focusrite
+  setup <br />
+  2. Immediate send failure — it tries to send to the remote port immediately and crashes when nothing is listening yet <br />
+  3. Sample rate or buffer size mismatch — the client expects different parameters <br />
+ 
   How It Compares to Browser-Based Solutions <br />
 
   <br />
