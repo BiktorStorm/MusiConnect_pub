@@ -19,7 +19,7 @@ from low_latency_backend import select_backend, open_stream
 # =============================================================================
 
 # --- Connection ---
-RECEIVER_IP = '127.0.0.1'   # set to the receiver's LAN IP for two machines
+RECEIVER_IP = '192.168.1.110'   # set to the receiver's LAN IP for two machines
 RECEIVER_PORT = 12345
 LISTEN_PORT = 12346         # receives RTT echo packets from the receiver
 
