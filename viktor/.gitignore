@@ -1,0 +1,19 @@
+# Build output
+build/
+
+# IDE files
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.a
+
+# vcpkg installed packages (downloaded on build)
+vcpkg_installed/
