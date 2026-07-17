@@ -28,6 +28,12 @@ public:
         , m_writePos(0)
         , m_readPos(0) {}
 
+    void resize(size_t capacity) {
+        m_capacity = capacity;
+        m_buffer.assign(capacity, T{});
+        clear();
+    }
+
     // Returns number of samples currently buffered
     size_t available() const {
         size_t w = m_writePos.load(std::memory_order_acquire);

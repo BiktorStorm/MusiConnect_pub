@@ -55,6 +55,22 @@ struct CoreAudioHandler::Impl {
 
     // Temporary buffer for input rendering
     AudioBufferList* inputBufferList = nullptr;
+
+    static OSStatus inputCallback(
+        void* inRefCon,
+        AudioUnitRenderActionFlags* ioActionFlags,
+        const AudioTimeStamp* inTimeStamp,
+        UInt32 inBusNumber,
+        UInt32 inNumberFrames,
+        AudioBufferList* ioData);
+
+    static OSStatus outputCallback(
+        void* inRefCon,
+        AudioUnitRenderActionFlags* ioActionFlags,
+        const AudioTimeStamp* inTimeStamp,
+        UInt32 inBusNumber,
+        UInt32 inNumberFrames,
+        AudioBufferList* ioData);
 };
 
 // =============================================================================
@@ -156,7 +172,7 @@ static UInt32 getDeviceLatency(AudioDeviceID deviceId, bool isInput) {
 // =============================================================================
 // Input render callback — called by Core Audio when input samples are available
 // =============================================================================
-static OSStatus inputCallback(
+OSStatus CoreAudioHandler::Impl::inputCallback(
     void* inRefCon,
     AudioUnitRenderActionFlags* ioActionFlags,
     const AudioTimeStamp* inTimeStamp,
@@ -164,7 +180,7 @@ static OSStatus inputCallback(
     UInt32 inNumberFrames,
     AudioBufferList* ioData)
 {
-    auto* impl = static_cast<CoreAudioHandler::Impl*>(inRefCon);
+    auto* impl = static_cast<Impl*>(inRefCon);
     if (!impl || !impl->running) return noErr;
 
     // Allocate/reuse buffer list for rendering input
@@ -203,7 +219,7 @@ static OSStatus inputCallback(
 // =============================================================================
 // Output render callback — called by Core Audio when it needs output samples
 // =============================================================================
-static OSStatus outputCallback(
+OSStatus CoreAudioHandler::Impl::outputCallback(
     void* inRefCon,
     AudioUnitRenderActionFlags* ioActionFlags,
     const AudioTimeStamp* inTimeStamp,
@@ -211,7 +227,7 @@ static OSStatus outputCallback(
     UInt32 inNumberFrames,
     AudioBufferList* ioData)
 {
-    auto* impl = static_cast<CoreAudioHandler::Impl*>(inRefCon);
+    auto* impl = static_cast<Impl*>(inRefCon);
     if (!impl || !impl->running || !ioData || ioData->mNumberBuffers == 0) {
         // Fill with silence
         if (ioData) {
@@ -374,7 +390,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
 
     // Set input callback
     AURenderCallbackStruct inputCb{};
-    inputCb.inputProc = inputCallback;
+    inputCb.inputProc = CoreAudioHandler::Impl::inputCallback;
     inputCb.inputProcRefCon = m_impl;
 
     status = AudioUnitSetProperty(m_impl->inputUnit,
@@ -440,7 +456,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
 
     // Set output render callback
     AURenderCallbackStruct outputCb{};
-    outputCb.inputProc = outputCallback;
+    outputCb.inputProc = CoreAudioHandler::Impl::outputCallback;
     outputCb.inputProcRefCon = m_impl;
 
     status = AudioUnitSetProperty(m_impl->outputUnit,
@@ -466,7 +482,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
     std::cout << "[CoreAudio] Latency — Input: " << inMs << "ms, Output: " << outMs << "ms" << std::endl;
 
     // Resize playout ring buffer (8x buffer size for safety)
-    m_impl->playoutBuffer = RingBuffer<float>(m_impl->actualBufferSize * 8);
+    m_impl->playoutBuffer.resize(m_impl->actualBufferSize * 8);
 
     return true;
 }

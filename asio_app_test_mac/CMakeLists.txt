@@ -4,6 +4,10 @@ project(MusiConnect VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Opus v1.4 still declares compatibility with older CMake versions. CMake 4
+# requires an explicit minimum policy version for such dependencies.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 # =============================================================================
 # DEPENDENCIES
 # =============================================================================
