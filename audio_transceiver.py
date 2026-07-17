@@ -27,7 +27,7 @@ from low_latency_backend import select_backend, open_stream, JitterBuffer
 # =============================================================================
 
 # --- Connection ---
-REMOTE_IP = '192.168.1.110'   # IP of the OTHER peer (change per machine)
+REMOTE_IP = input("Enter remote peer IP address: ").strip() # strips possible characters before and after code, IP of the OTHER peer (change per machine)
 REMOTE_PORT = 12345           # port the OTHER peer listens on for audio
 LOCAL_PORT = 12345            # port THIS machine listens on for incoming audio
 RTT_PORT = 12346              # port for RTT echo replies
