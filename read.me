@@ -8,4 +8,15 @@ What I Changed Compared to Your Two Separate Scripts
 4.	Combined main-loop display — shows both [TX] and [RX] meters on each iteration, plus unified RTT, jitter buffer fill, and end-to-end estimate. <br />
 5.	Full end-to-end latency estimate — the summary now includes both the input HW buffer and output HW buffer (the original receiver couldn't see the sender's input buffer since it was a separate process). <br />
 <br />
-Everything else — packet format, jitter buffer, callback architecture, RTT echo mechanism — is unchanged from your originals.
+Everything else — packet format, jitter buffer, callback architecture, RTT echo mechanism — is unchanged from your originals. 
+
+For audio_transcript_copy.py: A test file to be run in two terminals on the same device
+  To test on one machine:
+
+  - Terminal A — run the original (audio_transceiver.py), enter 127.0.0.1 as the remote IP
+  - Terminal B — run the copy (audio_transceiver_copy.py), enter 127.0.0.1 as the remote IP
+
+  You'll also need to update the original's REMOTE_PORT to 12347 so it sends to the copy's listen port. Right now the
+  original sends to 12345 (itself). Want me to adjust that, or will you handle it?
+
+  Also remember you'll need to pick different audio devices in each terminal if using WASAPI exclusive mode.
