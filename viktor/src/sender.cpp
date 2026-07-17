@@ -1,27 +1,21 @@
 #include <iostream>
 #include <string>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
-// Link with Winsock library
-#pragma comment(lib, "ws2_32.lib")
+#include "platform_socket.h"
 
 constexpr int PORT = 9000;
 constexpr const char* DEST_IP = "127.0.0.1"; // localhost for testing
 
 int main() {
-    // Initialize Winsock (Windows-specific requirement)
-    WSADATA wsa_data;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-        std::cerr << "WSAStartup failed\n";
+    if (platform_socket_init() != 0) {
+        std::cerr << "Socket initialization failed\n";
         return 1;
     }
 
     // Create a UDP socket
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == INVALID_SOCKET) {
-        std::cerr << "Socket creation failed: " << WSAGetLastError() << "\n";
-        WSACleanup();
+    socket_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock == INVALID_SOCK) {
+        std::cerr << "Socket creation failed: " << platform_get_error() << "\n";
+        platform_socket_cleanup();
         return 1;
     }
 
@@ -45,14 +39,14 @@ int main() {
             sizeof(dest_addr)
         );
 
-        if (bytes_sent == SOCKET_ERROR) {
-            std::cerr << "Send failed: " << WSAGetLastError() << "\n";
+        if (bytes_sent == SOCK_ERROR) {
+            std::cerr << "Send failed: " << platform_get_error() << "\n";
         } else {
             std::cout << "Sent " << bytes_sent << " bytes\n";
         }
     }
 
-    closesocket(sock);
-    WSACleanup();
+    platform_close_socket(sock);
+    platform_socket_cleanup();
     return 0;
 }

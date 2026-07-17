@@ -1,26 +1,22 @@
 #include <iostream>
 #include <array>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
-#pragma comment(lib, "ws2_32.lib")
+#include <string>
+#include "platform_socket.h"
 
 constexpr int PORT = 9000;
 constexpr int BUFFER_SIZE = 1024;
 
 int main() {
-    // Initialize Winsock
-    WSADATA wsa_data;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-        std::cerr << "WSAStartup failed\n";
+    if (platform_socket_init() != 0) {
+        std::cerr << "Socket initialization failed\n";
         return 1;
     }
 
     // Create a UDP socket
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == INVALID_SOCKET) {
-        std::cerr << "Socket creation failed: " << WSAGetLastError() << "\n";
-        WSACleanup();
+    socket_t sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock == INVALID_SOCK) {
+        std::cerr << "Socket creation failed: " << platform_get_error() << "\n";
+        platform_socket_cleanup();
         return 1;
     }
 
@@ -28,12 +24,12 @@ int main() {
     sockaddr_in listen_addr{};
     listen_addr.sin_family = AF_INET;
     listen_addr.sin_port = htons(PORT);
-    listen_addr.sin_addr.s_addr = INADDR_ANY; // Listen on all network interfaces
+    listen_addr.sin_addr.s_addr = INADDR_ANY;
 
-    if (bind(sock, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)) == SOCKET_ERROR) {
-        std::cerr << "Bind failed: " << WSAGetLastError() << "\n";
-        closesocket(sock);
-        WSACleanup();
+    if (bind(sock, reinterpret_cast<sockaddr*>(&listen_addr), sizeof(listen_addr)) == SOCK_ERROR) {
+        std::cerr << "Bind failed: " << platform_get_error() << "\n";
+        platform_close_socket(sock);
+        platform_socket_cleanup();
         return 1;
     }
 
@@ -41,10 +37,16 @@ int main() {
 
     std::array<char, BUFFER_SIZE> buffer{};
     sockaddr_in sender_addr{};
+
+    // socklen_t on POSIX, int on Windows — both work with this:
+#ifdef _WIN32
     int sender_addr_size = sizeof(sender_addr);
+#else
+    socklen_t sender_addr_size = sizeof(sender_addr);
+#endif
 
     while (true) {
-        // Wait for incoming data (this blocks until a packet arrives)
+        // Wait for incoming data (blocks until a packet arrives)
         int bytes_received = recvfrom(
             sock,
             buffer.data(),
@@ -54,8 +56,8 @@ int main() {
             &sender_addr_size
         );
 
-        if (bytes_received == SOCKET_ERROR) {
-            std::cerr << "Receive failed: " << WSAGetLastError() << "\n";
+        if (bytes_received == SOCK_ERROR) {
+            std::cerr << "Receive failed: " << platform_get_error() << "\n";
             continue;
         }
 
@@ -67,7 +69,7 @@ int main() {
                   << std::string(buffer.data(), bytes_received) << "\n";
     }
 
-    closesocket(sock);
-    WSACleanup();
+    platform_close_socket(sock);
+    platform_socket_cleanup();
     return 0;
 }

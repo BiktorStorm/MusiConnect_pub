@@ -23,10 +23,20 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 add_executable(sender
     src/sender.cpp
 )
-target_link_libraries(sender PRIVATE ws2_32)
+target_include_directories(sender PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
 
 # UDP Receiver (test tool)
 add_executable(receiver
     src/receiver.cpp
 )
-target_link_libraries(receiver PRIVATE ws2_32)
+target_include_directories(receiver PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+# Link Winsock only on Windows
+if(WIN32)
+    target_link_libraries(sender PRIVATE ws2_32)
+    target_link_libraries(receiver PRIVATE ws2_32)
+endif()
