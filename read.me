@@ -10,6 +10,37 @@ What I Changed Compared to Your Two Separate Scripts
 <br />
 Everything else — packet format, jitter buffer, callback architecture, RTT echo mechanism — is unchanged from your originals. 
 
+cpp-file: 
+
+  audio_transceiver.cpp — The full C++ translation (~600 lines), structured as:
+
+  - Platform shims (~30 lines): #ifdef _WIN32 for Winsock vs POSIX sockets, iOS audio session stub
+  - JitterBuffer class — identical logic to the Python version
+  - PortAudio callbacks — capture_callback sends UDP directly (no TX thread needed), playout_callback pulls from jitter buffer
+  - net_rx_loop — receive thread that pushes into the jitter buffer + echoes headers for RTT
+  - main() — prompts for remote IP, selects devices interactively, opens streams, runs the meter loop
+
+  CMakeLists.txt — Cross-platform build config that:
+
+  - Finds PortAudio via pkg-config, cmake find, or manual -DPORTAUDIO_ROOT=<path>
+  - Links platform-specific libs (ws2_32 on Windows, CoreAudio frameworks on macOS, pthread on Linux)
+
+  How to build:
+
+  # macOS (after: brew install portaudio)
+  mkdir build && cd build
+  cmake .. && make
+
+  # Linux (after: sudo apt install portaudio19-dev)
+  mkdir build && cd build
+  cmake .. && make
+
+  # Windows (with vcpkg or manual PortAudio)
+  mkdir build && cd build
+  cmake .. -DPORTAUDIO_ROOT=C:/path/to/portaudio
+  cmake --build . --config Release
+
+
 For audio_transcript_copy.py: A test file to be run in two terminals on the same device
   To test on one machine:
 
