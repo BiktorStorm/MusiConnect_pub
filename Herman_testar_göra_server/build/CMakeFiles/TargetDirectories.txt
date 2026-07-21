@@ -1,0 +1,4 @@
+C:/Users/ehjseto/OneDrive - Ericsson/Desktop/MusiConnect_pub/Herman_testar_göra_server/build/CMakeFiles/signaling_server.dir
+C:/Users/ehjseto/OneDrive - Ericsson/Desktop/MusiConnect_pub/Herman_testar_göra_server/build/CMakeFiles/demo_client.dir
+C:/Users/ehjseto/OneDrive - Ericsson/Desktop/MusiConnect_pub/Herman_testar_göra_server/build/CMakeFiles/edit_cache.dir
+C:/Users/ehjseto/OneDrive - Ericsson/Desktop/MusiConnect_pub/Herman_testar_göra_server/build/CMakeFiles/rebuild_cache.dir

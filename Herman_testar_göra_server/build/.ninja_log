@@ -1,0 +1,6 @@
+# ninja log v7
+60	1542	8063412307127208	CMakeFiles/demo_client.dir/demo_client.cpp.obj	9a9804ae85a16eea
+120	1752	8063412307717839	CMakeFiles/demo_client.dir/signaling_client.cpp.obj	2c4ae02e071c866d
+11	1807	8063412306604463	CMakeFiles/signaling_server.dir/signaling_server.cpp.obj	8527ef1f76736900
+1752	2425	8063412324052524	demo_client.exe	4d7880b0695880b1
+1807	2471	8063412324599983	signaling_server.exe	756d4c1bd7ce52a8
