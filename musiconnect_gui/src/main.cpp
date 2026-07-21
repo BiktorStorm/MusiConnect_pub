@@ -114,7 +114,7 @@ int main(int, char**) {
                      ImGuiWindowFlags_NoCollapse |
                      ImGuiWindowFlags_NoTitleBar);
 
-        ImGui::TextUnformatted("MusiConnect — Ultra Low Latency P2P Audio");
+        ImGui::TextUnformatted("MusiConnect Low Latency P2P Audio");
         ImGui::Separator();
         ImGui::Spacing();
 
