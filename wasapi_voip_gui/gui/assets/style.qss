@@ -1,0 +1,197 @@
+/* =============================================================================
+   MusiConnect Dark Theme
+   
+   Qt Style Sheets (QSS) work like CSS — you can customize:
+   - Colors, gradients, backgrounds
+   - Borders, border-radius (rounded corners)
+   - Fonts, padding, margins
+   - Hover, pressed, disabled states
+   - Widget sub-controls (::handle, ::indicator, etc.)
+   ============================================================================= */
+
+/* --- Global --- */
+QWidget {
+    background-color: #1a1a2e;
+    color: #e0e0e0;
+    font-family: "Segoe UI", sans-serif;
+    font-size: 13px;
+}
+
+/* --- Main Window --- */
+QMainWindow {
+    background-color: #1a1a2e;
+}
+
+/* --- Labels --- */
+QLabel {
+    color: #e0e0e0;
+    padding: 2px;
+}
+
+QLabel#titleLabel {
+    font-size: 18px;
+    font-weight: bold;
+    color: #4fc3f7;
+}
+
+QLabel#statusLabel {
+    font-size: 12px;
+    color: #81c784;
+    padding: 4px 8px;
+    background-color: #1b2838;
+    border-radius: 4px;
+}
+
+/* --- Text Input (IP Address Bar) --- */
+QLineEdit {
+    background-color: #16213e;
+    color: #ffffff;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 14px;
+    selection-background-color: #4fc3f7;
+}
+
+QLineEdit:focus {
+    border-color: #4fc3f7;
+}
+
+QLineEdit:hover {
+    border-color: #335c8e;
+}
+
+/* --- Buttons --- */
+QPushButton {
+    background-color: #0f3460;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #1a5276;
+}
+
+QPushButton:pressed {
+    background-color: #4fc3f7;
+    color: #1a1a2e;
+}
+
+QPushButton:disabled {
+    background-color: #2a2a3e;
+    color: #606060;
+}
+
+QPushButton#connectButton {
+    background-color: #2e7d32;
+    font-size: 15px;
+    padding: 12px 32px;
+    border-radius: 10px;
+}
+
+QPushButton#connectButton:hover {
+    background-color: #388e3c;
+}
+
+QPushButton#connectButton:pressed {
+    background-color: #4caf50;
+}
+
+QPushButton#disconnectButton {
+    background-color: #c62828;
+    font-size: 15px;
+    padding: 12px 32px;
+    border-radius: 10px;
+}
+
+QPushButton#disconnectButton:hover {
+    background-color: #e53935;
+}
+
+/* --- Device List (clickable cards) --- */
+QListWidget {
+    background-color: #16213e;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+
+QListWidget::item {
+    background-color: #1b2838;
+    color: #e0e0e0;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 3px 2px;
+}
+
+QListWidget::item:hover {
+    background-color: #1e3a5f;
+    border: 1px solid #4fc3f7;
+}
+
+QListWidget::item:selected {
+    background-color: #0f3460;
+    border: 2px solid #4fc3f7;
+    color: #ffffff;
+}
+
+/* --- Group Boxes (panels) --- */
+QGroupBox {
+    background-color: #16213e;
+    border: 1px solid #0f3460;
+    border-radius: 10px;
+    margin-top: 12px;
+    padding: 16px 12px 12px 12px;
+    font-weight: bold;
+    color: #4fc3f7;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 4px 10px;
+    color: #4fc3f7;
+}
+
+/* --- Spin Box (port number) --- */
+QSpinBox {
+    background-color: #16213e;
+    color: #ffffff;
+    border: 2px solid #0f3460;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+QSpinBox:focus {
+    border-color: #4fc3f7;
+}
+
+/* --- Stats Display --- */
+QFrame#statsFrame {
+    background-color: #0d1b2a;
+    border: 1px solid #1b3a4b;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+/* --- Scroll Bar --- */
+QScrollBar:vertical {
+    background-color: #1a1a2e;
+    width: 8px;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #0f3460;
+    border-radius: 4px;
+    min-height: 30px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #4fc3f7;
+}
