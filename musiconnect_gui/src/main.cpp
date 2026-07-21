@@ -2,7 +2,7 @@
 // MUSICONNECT GUI — Dear ImGui + GLFW + OpenGL3
 //
 // A simple settings window that replaces command-line arguments:
-//   - Audio device selection (dropdown)
+//   - Audio device display (system defaults, with refresh)
 //   - Remote IP / port
 //   - Local port
 //   - Buffer size
@@ -22,17 +22,7 @@
 #include <GLFW/glfw3.h>
 
 #include <string>
-#include <vector>
-#include <cstring>
 #include <cstdio>
-
-// Helper: convert vector<string> to array of const char* for ImGui combo
-static std::vector<const char*> toCStrArray(const std::vector<std::string>& v) {
-    std::vector<const char*> result;
-    result.reserve(v.size());
-    for (auto& s : v) result.push_back(s.c_str());
-    return result;
-}
 
 int main(int, char**) {
     // =========================================================================
@@ -87,10 +77,12 @@ int main(int, char**) {
     // =========================================================================
     AudioEngine engine;
 
-    // Enumerate devices once at startup
-    std::vector<std::string> devices = AudioEngine::listDevices();
-    auto devicesCStr = toCStrArray(devices);
-    int selectedDevice = 0;
+    // Get system default devices
+    std::string inputDeviceName = "(detecting...)";
+    std::string outputDeviceName = "(detecting...)";
+    auto deviceNames = AudioEngine::getDefaultDeviceNames();
+    if (deviceNames.first.size()) inputDeviceName = deviceNames.first;
+    if (deviceNames.second.size()) outputDeviceName = deviceNames.second;
 
     // Settings fields
     char remoteHost[128] = "127.0.0.1";
@@ -128,17 +120,20 @@ int main(int, char**) {
 
         bool isRunning = engine.isRunning();
 
-        // ----- Audio Device -----
-        ImGui::Text("Audio Device");
+        // ----- Audio Devices -----
+        ImGui::Text("Audio Devices (system defaults)");
         if (isRunning) ImGui::BeginDisabled();
 
-        if (devices.empty()) {
-            ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "No audio devices found");
-        } else {
-            ImGui::SetNextItemWidth(-1);
-            ImGui::Combo("##device", &selectedDevice, devicesCStr.data(),
-                         static_cast<int>(devicesCStr.size()));
+        ImGui::Text("  Input:  %s", inputDeviceName.c_str());
+        ImGui::Text("  Output: %s", outputDeviceName.c_str());
+
+        if (ImGui::SmallButton("Refresh Devices")) {
+            auto names = AudioEngine::getDefaultDeviceNames();
+            inputDeviceName = names.first.empty() ? "(none found)" : names.first;
+            outputDeviceName = names.second.empty() ? "(none found)" : names.second;
         }
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "(change in system settings)");
 
         ImGui::Spacing();
 
@@ -196,7 +191,7 @@ int main(int, char**) {
         if (!isRunning) {
             if (ImGui::Button("Connect", ImVec2(120, 36))) {
                 EngineConfig config;
-                config.audioDevice = devices.empty() ? "" : devices[selectedDevice];
+                config.audioDevice = "";  // Use system defaults
                 config.sampleRate = 48000;
                 config.bufferSize = bufferSize;
                 config.bitrate = bitrate;
@@ -242,16 +237,6 @@ int main(int, char**) {
             ImGui::Spacing();
             ImVec4 color = statusIsError ? ImVec4(1, 0.3f, 0.3f, 1) : ImVec4(0.3f, 1, 0.3f, 1);
             ImGui::TextColored(color, "%s", statusMessage.c_str());
-        }
-
-        // ----- Refresh devices button -----
-        ImGui::Spacing();
-        if (!isRunning) {
-            if (ImGui::SmallButton("Refresh Devices")) {
-                devices = AudioEngine::listDevices();
-                devicesCStr = toCStrArray(devices);
-                selectedDevice = 0;
-            }
         }
 
         ImGui::End();

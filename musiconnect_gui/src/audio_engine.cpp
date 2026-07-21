@@ -11,13 +11,15 @@
 #include "audio_asio.h"
 #else
 #include "audio_coreaudio.h"
+#include <CoreAudio/CoreAudio.h>
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 #include "celt_codec.h"
 #include "network.h"
 
 #include <vector>
-#include <mutex>
+#include <atomic>
 
 struct AudioEngine::Impl {
     std::atomic<bool> running{false};
@@ -50,6 +52,69 @@ std::vector<std::string> AudioEngine::listDevices() {
     return AsioAudioHandler::listDrivers();
 #else
     return CoreAudioHandler::listDevices();
+#endif
+}
+
+std::pair<std::string, std::string> AudioEngine::getDefaultDeviceNames() {
+#ifdef _WIN32
+    // On Windows with ASIO, the driver handles both input and output
+    auto drivers = AsioAudioHandler::listDrivers();
+    std::string name = drivers.empty() ? "(no ASIO driver found)" : drivers[0];
+    return {name, name};
+#else
+    // On macOS, query Core Audio for default input and output device names
+    // We use the CoreAudioHandler's listDevices temporarily, but really we
+    // need the actual default device names from the OS.
+    // CoreAudioHandler::init() already prints them, so we replicate the query here.
+    std::string inputName = "(unknown)";
+    std::string outputName = "(unknown)";
+
+    // Query default input device
+    AudioObjectPropertyAddress addr{};
+    addr.mScope = kAudioObjectPropertyScopeGlobal;
+    addr.mElement = kAudioObjectPropertyElementMain;
+
+    // Input
+    addr.mSelector = kAudioHardwarePropertyDefaultInputDevice;
+    AudioDeviceID inputId = kAudioObjectUnknown;
+    UInt32 size = sizeof(inputId);
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &size, &inputId) == noErr
+        && inputId != kAudioObjectUnknown) {
+        CFStringRef nameRef = nullptr;
+        AudioObjectPropertyAddress nameAddr{};
+        nameAddr.mSelector = kAudioObjectPropertyName;
+        nameAddr.mScope = kAudioObjectPropertyScopeGlobal;
+        nameAddr.mElement = kAudioObjectPropertyElementMain;
+        UInt32 nameSize = sizeof(nameRef);
+        if (AudioObjectGetPropertyData(inputId, &nameAddr, 0, nullptr, &nameSize, &nameRef) == noErr && nameRef) {
+            char buf[256];
+            CFStringGetCString(nameRef, buf, sizeof(buf), kCFStringEncodingUTF8);
+            CFRelease(nameRef);
+            inputName = buf;
+        }
+    }
+
+    // Output
+    addr.mSelector = kAudioHardwarePropertyDefaultOutputDevice;
+    AudioDeviceID outputId = kAudioObjectUnknown;
+    size = sizeof(outputId);
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &size, &outputId) == noErr
+        && outputId != kAudioObjectUnknown) {
+        CFStringRef nameRef = nullptr;
+        AudioObjectPropertyAddress nameAddr{};
+        nameAddr.mSelector = kAudioObjectPropertyName;
+        nameAddr.mScope = kAudioObjectPropertyScopeGlobal;
+        nameAddr.mElement = kAudioObjectPropertyElementMain;
+        UInt32 nameSize = sizeof(nameRef);
+        if (AudioObjectGetPropertyData(outputId, &nameAddr, 0, nullptr, &nameSize, &nameRef) == noErr && nameRef) {
+            char buf[256];
+            CFStringGetCString(nameRef, buf, sizeof(buf), kCFStringEncodingUTF8);
+            CFRelease(nameRef);
+            outputName = buf;
+        }
+    }
+
+    return {inputName, outputName};
 #endif
 }
 

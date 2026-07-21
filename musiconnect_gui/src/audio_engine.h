@@ -8,8 +8,9 @@
 
 #include <string>
 #include <vector>
-#include <atomic>
+#include <cstdint>
 #include <memory>
+#include <utility>
 
 struct EngineConfig {
     // Audio
@@ -43,6 +44,10 @@ public:
 
     // List available audio devices/drivers for the current platform
     static std::vector<std::string> listDevices();
+
+    // Get the names of the system's current default input and output devices
+    // Returns: {inputDeviceName, outputDeviceName}
+    static std::pair<std::string, std::string> getDefaultDeviceNames();
 
     // Start the full pipeline with given config
     bool start(const EngineConfig& config);
