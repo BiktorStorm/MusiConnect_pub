@@ -1,7 +1,0 @@
-{
-  "name": "viktor-voicechat",
-  "version-string": "0.1.0",
-  "description": "Peer-to-peer low latency voice chat",
-  "dependencies": [
-  ]
-}

@@ -22,11 +22,7 @@
 template <typename T>
 class RingBuffer {
 public:
-    explicit RingBuffer(size_t capacity)
-        : m_capacity(capacity)
-        , m_buffer(capacity)
-        , m_writePos(0)
-        , m_readPos(0) {}
+    explicit RingBuffer(size_t capacity) : m_capacity(capacity), m_buffer(capacity), m_writePos(0), m_readPos(0) {}
 
     void resize(size_t capacity) {
         m_capacity = capacity;
@@ -53,8 +49,7 @@ public:
 
             // If full, advance read position (drop oldest)
             if (nextWrite == m_readPos.load(std::memory_order_acquire)) {
-                m_readPos.store((m_readPos.load(std::memory_order_relaxed) + 1) % m_capacity,
-                               std::memory_order_release);
+                m_readPos.store((m_readPos.load(std::memory_order_relaxed) + 1) % m_capacity, std::memory_order_release);
             }
 
             m_buffer[m_writePos.load(std::memory_order_relaxed)] = data[i];
@@ -73,8 +68,7 @@ public:
                 output[i] = T(0);
             } else {
                 output[i] = m_buffer[m_readPos.load(std::memory_order_relaxed)];
-                m_readPos.store((m_readPos.load(std::memory_order_relaxed) + 1) % m_capacity,
-                               std::memory_order_release);
+                m_readPos.store((m_readPos.load(std::memory_order_relaxed) + 1) % m_capacity, std::memory_order_release);
                 read++;
             }
         }

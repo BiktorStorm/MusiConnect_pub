@@ -56,18 +56,13 @@ bool CeltCodec::init(const CeltConfig& config) {
     // Determine encoded frame size by encoding a silent frame
     std::vector<float> silence(config.frameSize * config.channels, 0.0f);
     uint8_t tempOutput[512];
-    m_encodedFrameSize = opus_custom_encode_float(encoder, silence.data(), config.frameSize,
-                                                   tempOutput, sizeof(tempOutput));
+    m_encodedFrameSize = opus_custom_encode_float(encoder, silence.data(), config.frameSize, tempOutput, sizeof(tempOutput));
     if (m_encodedFrameSize <= 0) {
         std::cerr << "[CELT] Failed to determine encoded frame size" << std::endl;
         return false;
     }
 
-    std::cout << "[CELT] Initialized: " << config.frameSize << " samples/frame ("
-              << getFrameDurationMs() << "ms), "
-              << config.bitrate / 1000 << "kbps, "
-              << m_encodedFrameSize << " bytes/frame, "
-              << "complexity=" << config.complexity << std::endl;
+    std::cout << "[CELT] Initialized: " << config.frameSize << " samples/frame (" << getFrameDurationMs() << "ms), " << config.bitrate / 1000 << "kbps, " << m_encodedFrameSize << " bytes/frame, " << "complexity=" << config.complexity << std::endl;
 
     return true;
 }
@@ -75,13 +70,7 @@ bool CeltCodec::init(const CeltConfig& config) {
 int CeltCodec::encode(const float* pcm, uint8_t* output, int maxOutputBytes) {
     if (!m_encoder) return -1;
 
-    int encoded = opus_custom_encode_float(
-        static_cast<OpusCustomEncoder*>(m_encoder),
-        pcm,
-        m_config.frameSize,
-        output,
-        maxOutputBytes
-    );
+    int encoded = opus_custom_encode_float(static_cast<OpusCustomEncoder*>(m_encoder), pcm, m_config.frameSize, output, maxOutputBytes);
 
     return encoded;
 }
@@ -89,13 +78,7 @@ int CeltCodec::encode(const float* pcm, uint8_t* output, int maxOutputBytes) {
 int CeltCodec::decode(const uint8_t* encoded, int encodedLen, float* pcm) {
     if (!m_decoder) return -1;
 
-    int decoded = opus_custom_decode_float(
-        static_cast<OpusCustomDecoder*>(m_decoder),
-        encoded,
-        encodedLen,
-        pcm,
-        m_config.frameSize
-    );
+    int decoded = opus_custom_decode_float(static_cast<OpusCustomDecoder*>(m_decoder), encoded, encodedLen, pcm, m_config.frameSize);
 
     return decoded;
 }
@@ -104,13 +87,7 @@ int CeltCodec::decodePLC(float* pcm) {
     if (!m_decoder) return -1;
 
     // Passing NULL for data triggers packet loss concealment
-    int decoded = opus_custom_decode_float(
-        static_cast<OpusCustomDecoder*>(m_decoder),
-        nullptr,
-        0,
-        pcm,
-        m_config.frameSize
-    );
+    int decoded = opus_custom_decode_float(static_cast<OpusCustomDecoder*>(m_decoder), nullptr, 0, pcm, m_config.frameSize);
 
     return decoded;
 }

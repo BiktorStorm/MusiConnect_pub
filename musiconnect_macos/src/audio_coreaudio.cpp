@@ -56,21 +56,9 @@ struct CoreAudioHandler::Impl {
     // Temporary buffer for input rendering
     AudioBufferList* inputBufferList = nullptr;
 
-    static OSStatus inputCallback(
-        void* inRefCon,
-        AudioUnitRenderActionFlags* ioActionFlags,
-        const AudioTimeStamp* inTimeStamp,
-        UInt32 inBusNumber,
-        UInt32 inNumberFrames,
-        AudioBufferList* ioData);
+    static OSStatus inputCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags, const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList* ioData);
 
-    static OSStatus outputCallback(
-        void* inRefCon,
-        AudioUnitRenderActionFlags* ioActionFlags,
-        const AudioTimeStamp* inTimeStamp,
-        UInt32 inBusNumber,
-        UInt32 inNumberFrames,
-        AudioBufferList* ioData);
+    static OSStatus outputCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags, const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList* ioData);
 };
 
 // =============================================================================
@@ -78,20 +66,17 @@ struct CoreAudioHandler::Impl {
 // =============================================================================
 static AudioDeviceID getDefaultDevice(bool isInput) {
     AudioObjectPropertyAddress addr;
-    addr.mSelector = isInput ? kAudioHardwarePropertyDefaultInputDevice
-                             : kAudioHardwarePropertyDefaultOutputDevice;
+    addr.mSelector = isInput ? kAudioHardwarePropertyDefaultInputDevice : kAudioHardwarePropertyDefaultOutputDevice;
     addr.mScope = kAudioObjectPropertyScopeGlobal;
     addr.mElement = kAudioObjectPropertyElementMain;
 
     AudioDeviceID deviceId = kAudioObjectUnknown;
     UInt32 size = sizeof(deviceId);
 
-    OSStatus status = AudioObjectGetPropertyData(
-        kAudioObjectSystemObject, &addr, 0, nullptr, &size, &deviceId);
+    OSStatus status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &size, &deviceId);
 
     if (status != noErr) {
-        std::cerr << "[CoreAudio] Failed to get default "
-                  << (isInput ? "input" : "output") << " device: " << status << std::endl;
+        std::cerr << "[CoreAudio] Failed to get default " << (isInput ? "input" : "output") << " device: " << status << std::endl;
         return kAudioObjectUnknown;
     }
     return deviceId;
@@ -127,12 +112,10 @@ static bool setDeviceBufferSize(AudioDeviceID deviceId, UInt32 frames, bool isIn
     addr.mScope = isInput ? kAudioObjectPropertyScopeInput : kAudioObjectPropertyScopeOutput;
     addr.mElement = kAudioObjectPropertyElementMain;
 
-    OSStatus status = AudioObjectSetPropertyData(
-        deviceId, &addr, 0, nullptr, sizeof(frames), &frames);
+    OSStatus status = AudioObjectSetPropertyData(deviceId, &addr, 0, nullptr, sizeof(frames), &frames);
 
     if (status != noErr) {
-        std::cerr << "[CoreAudio] Failed to set buffer size to " << frames
-                  << " on " << (isInput ? "input" : "output") << ": " << status << std::endl;
+        std::cerr << "[CoreAudio] Failed to set buffer size to " << frames << " on " << (isInput ? "input" : "output") << ": " << status << std::endl;
         return false;
     }
     return true;
@@ -172,21 +155,13 @@ static UInt32 getDeviceLatency(AudioDeviceID deviceId, bool isInput) {
 // =============================================================================
 // Input render callback — called by Core Audio when input samples are available
 // =============================================================================
-OSStatus CoreAudioHandler::Impl::inputCallback(
-    void* inRefCon,
-    AudioUnitRenderActionFlags* ioActionFlags,
-    const AudioTimeStamp* inTimeStamp,
-    UInt32 inBusNumber,
-    UInt32 inNumberFrames,
-    AudioBufferList* ioData)
-{
+OSStatus CoreAudioHandler::Impl::inputCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags, const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList* ioData) {
     auto* impl = static_cast<Impl*>(inRefCon);
     if (!impl || !impl->running) return noErr;
 
     // Allocate/reuse buffer list for rendering input
     if (!impl->inputBufferList) {
-        impl->inputBufferList = (AudioBufferList*)calloc(1,
-            sizeof(AudioBufferList) + sizeof(AudioBuffer));
+        impl->inputBufferList = (AudioBufferList*)calloc(1, sizeof(AudioBufferList) + sizeof(AudioBuffer));
         impl->inputBufferList->mNumberBuffers = 1;
     }
 
@@ -199,11 +174,7 @@ OSStatus CoreAudioHandler::Impl::inputCallback(
     impl->inputBufferList->mBuffers[0].mData = tempBuf.data();
 
     // Render input audio into our buffer
-    OSStatus status = AudioUnitRender(
-        impl->inputUnit, ioActionFlags, inTimeStamp,
-        1,  // Input bus (element 1 on AUHAL)
-        inNumberFrames,
-        impl->inputBufferList);
+    OSStatus status = AudioUnitRender(impl->inputUnit, ioActionFlags, inTimeStamp, 1, inNumberFrames, impl->inputBufferList);
 
     if (status != noErr) return status;
 
@@ -219,14 +190,7 @@ OSStatus CoreAudioHandler::Impl::inputCallback(
 // =============================================================================
 // Output render callback — called by Core Audio when it needs output samples
 // =============================================================================
-OSStatus CoreAudioHandler::Impl::outputCallback(
-    void* inRefCon,
-    AudioUnitRenderActionFlags* ioActionFlags,
-    const AudioTimeStamp* inTimeStamp,
-    UInt32 inBusNumber,
-    UInt32 inNumberFrames,
-    AudioBufferList* ioData)
-{
+OSStatus CoreAudioHandler::Impl::outputCallback(void* inRefCon, AudioUnitRenderActionFlags* ioActionFlags, const AudioTimeStamp* inTimeStamp, UInt32 inBusNumber, UInt32 inNumberFrames, AudioBufferList* ioData) {
     auto* impl = static_cast<Impl*>(inRefCon);
     if (!impl || !impl->running || !ioData || ioData->mNumberBuffers == 0) {
         // Fill with silence
@@ -275,15 +239,13 @@ std::vector<std::string> CoreAudioHandler::listDevices() {
     addr.mElement = kAudioObjectPropertyElementMain;
 
     UInt32 size = 0;
-    OSStatus status = AudioObjectGetPropertyDataSize(
-        kAudioObjectSystemObject, &addr, 0, nullptr, &size);
+    OSStatus status = AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &addr, 0, nullptr, &size);
     if (status != noErr) return result;
 
     int deviceCount = size / sizeof(AudioDeviceID);
     std::vector<AudioDeviceID> devices(deviceCount);
 
-    status = AudioObjectGetPropertyData(
-        kAudioObjectSystemObject, &addr, 0, nullptr, &size, devices.data());
+    status = AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr, 0, nullptr, &size, devices.data());
     if (status != noErr) return result;
 
     for (auto deviceId : devices) {
@@ -313,13 +275,12 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
     std::cout << "[CoreAudio] Output device: " << getDeviceName(m_impl->outputDevice) << std::endl;
 
     // --- Set buffer size on devices ---
-    setDeviceBufferSize(m_impl->inputDevice, config.bufferSize, true);
+    setDeviceBufferSize(m_impl->inputDevice, config.bufferSize, true); 
     setDeviceBufferSize(m_impl->outputDevice, config.bufferSize, false);
 
     m_impl->actualBufferSize = (int)getDeviceBufferSize(m_impl->inputDevice, true);
     if (m_impl->actualBufferSize != config.bufferSize) {
-        std::cout << "[CoreAudio] Requested " << config.bufferSize
-                  << " samples, got " << m_impl->actualBufferSize << std::endl;
+        std::cout << "[CoreAudio] Requested " << config.bufferSize << " samples, got " << m_impl->actualBufferSize << std::endl;
     }
 
     // --- Create Input AudioUnit (AUHAL) ---
@@ -342,9 +303,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
 
     // Enable input on the input unit
     UInt32 enableIO = 1;
-    status = AudioUnitSetProperty(m_impl->inputUnit,
-        kAudioOutputUnitProperty_EnableIO,
-        kAudioUnitScope_Input, 1, &enableIO, sizeof(enableIO));
+    status = AudioUnitSetProperty(m_impl->inputUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &enableIO, sizeof(enableIO));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to enable input: " << status << std::endl;
         return false;
@@ -352,18 +311,14 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
 
     // Disable output on the input unit (we have a separate unit for output)
     UInt32 disableIO = 0;
-    status = AudioUnitSetProperty(m_impl->inputUnit,
-        kAudioOutputUnitProperty_EnableIO,
-        kAudioUnitScope_Output, 0, &disableIO, sizeof(disableIO));
+    status = AudioUnitSetProperty(m_impl->inputUnit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &disableIO, sizeof(disableIO));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to disable output on input unit: " << status << std::endl;
         return false;
     }
 
     // Set input device
-    status = AudioUnitSetProperty(m_impl->inputUnit,
-        kAudioOutputUnitProperty_CurrentDevice,
-        kAudioUnitScope_Global, 0, &m_impl->inputDevice, sizeof(m_impl->inputDevice));
+    status = AudioUnitSetProperty(m_impl->inputUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &m_impl->inputDevice, sizeof(m_impl->inputDevice));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to set input device: " << status << std::endl;
         return false;
@@ -380,9 +335,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
     inputFormat.mBytesPerFrame = sizeof(float);
     inputFormat.mBytesPerPacket = sizeof(float);
 
-    status = AudioUnitSetProperty(m_impl->inputUnit,
-        kAudioUnitProperty_StreamFormat,
-        kAudioUnitScope_Output, 1, &inputFormat, sizeof(inputFormat));
+    status = AudioUnitSetProperty(m_impl->inputUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &inputFormat, sizeof(inputFormat));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to set input format: " << status << std::endl;
         return false;
@@ -393,9 +346,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
     inputCb.inputProc = CoreAudioHandler::Impl::inputCallback;
     inputCb.inputProcRefCon = m_impl;
 
-    status = AudioUnitSetProperty(m_impl->inputUnit,
-        kAudioOutputUnitProperty_SetInputCallback,
-        kAudioUnitScope_Global, 0, &inputCb, sizeof(inputCb));
+    status = AudioUnitSetProperty(m_impl->inputUnit, kAudioOutputUnitProperty_SetInputCallback, kAudioUnitScope_Global, 0, &inputCb, sizeof(inputCb));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to set input callback: " << status << std::endl;
         return false;
@@ -427,9 +378,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
     }
 
     // Set output device
-    status = AudioUnitSetProperty(m_impl->outputUnit,
-        kAudioOutputUnitProperty_CurrentDevice,
-        kAudioUnitScope_Global, 0, &m_impl->outputDevice, sizeof(m_impl->outputDevice));
+    status = AudioUnitSetProperty(m_impl->outputUnit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &m_impl->outputDevice, sizeof(m_impl->outputDevice));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to set output device: " << status << std::endl;
         return false;
@@ -446,9 +395,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
     outputFormat.mBytesPerFrame = sizeof(float);
     outputFormat.mBytesPerPacket = sizeof(float);
 
-    status = AudioUnitSetProperty(m_impl->outputUnit,
-        kAudioUnitProperty_StreamFormat,
-        kAudioUnitScope_Input, 0, &outputFormat, sizeof(outputFormat));
+    status = AudioUnitSetProperty(m_impl->outputUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &outputFormat, sizeof(outputFormat));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to set output format: " << status << std::endl;
         return false;
@@ -459,9 +406,7 @@ bool CoreAudioHandler::init(const AudioConfig& config) {
     outputCb.inputProc = CoreAudioHandler::Impl::outputCallback;
     outputCb.inputProcRefCon = m_impl;
 
-    status = AudioUnitSetProperty(m_impl->outputUnit,
-        kAudioUnitProperty_SetRenderCallback,
-        kAudioUnitScope_Input, 0, &outputCb, sizeof(outputCb));
+    status = AudioUnitSetProperty(m_impl->outputUnit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &outputCb, sizeof(outputCb));
     if (status != noErr) {
         std::cerr << "[CoreAudio] Failed to set output callback: " << status << std::endl;
         return false;
@@ -506,8 +451,7 @@ bool CoreAudioHandler::start() {
     }
 
     double frameMs = (double)m_impl->actualBufferSize / m_impl->config.sampleRate * 1000.0;
-    std::cout << "[CoreAudio] Started — " << m_impl->actualBufferSize << " samples @ "
-              << m_impl->config.sampleRate << "Hz (" << frameMs << "ms per callback)" << std::endl;
+    std::cout << "[CoreAudio] Started — " << m_impl->actualBufferSize << " samples @ " << m_impl->config.sampleRate << "Hz (" << frameMs << "ms per callback)" << std::endl;
     return true;
 }
 
@@ -547,14 +491,5 @@ int CoreAudioHandler::getActualBufferSize() const {
 
 CoreAudioHandler::Stats CoreAudioHandler::getStats() const {
     double bufMs = (double)m_impl->actualBufferSize / m_impl->config.sampleRate * 1000.0;
-    return {
-        m_impl->actualBufferSize,
-        m_impl->config.sampleRate,
-        bufMs,
-        bufMs,
-        m_impl->capturedFrames,
-        m_impl->playedFrames,
-        m_impl->underruns,
-        m_impl->overflows
-    };
+    return { m_impl->actualBufferSize, m_impl->config.sampleRate, bufMs, bufMs, m_impl->capturedFrames, m_impl->playedFrames, m_impl->underruns, m_impl->overflows };
 }

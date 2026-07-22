@@ -61,8 +61,7 @@ bool UdpTransport::init(const NetworkConfig& config) {
     setsockopt(m_socket, SOL_SOCKET, SO_SNDBUF, &bufSize, sizeof(bufSize));
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, &bufSize, sizeof(bufSize));
 
-    std::cout << "[NET] Bound to port " << config.localPort
-              << ", remote: " << config.remoteHost << ":" << config.remotePort << std::endl;
+    std::cout << "[NET] Bound to port " << config.localPort << ", remote: " << config.remoteHost << ":" << config.remotePort << std::endl;
 
     return true;
 }
@@ -103,8 +102,7 @@ bool UdpTransport::send(const uint8_t* data, int length) {
     remoteAddr.sin_port = htons(m_config.remotePort);
     inet_pton(AF_INET, m_config.remoteHost.c_str(), &remoteAddr.sin_addr);
 
-    ssize_t sent = sendto(m_socket, packet, length + HEADER_SIZE, 0,
-                          reinterpret_cast<sockaddr*>(&remoteAddr), sizeof(remoteAddr));
+    ssize_t sent = sendto(m_socket, packet, length + HEADER_SIZE, 0, reinterpret_cast<sockaddr*>(&remoteAddr), sizeof(remoteAddr));
 
     if (sent > 0) {
         m_packetsSent.fetch_add(1, std::memory_order_relaxed);
@@ -131,8 +129,7 @@ void UdpTransport::receiveLoop() {
 
         if (ready <= 0) continue;
 
-        ssize_t received = recvfrom(m_socket, buffer, MAX_PACKET_SIZE, 0,
-                                    reinterpret_cast<sockaddr*>(&senderAddr), &senderLen);
+        ssize_t received = recvfrom(m_socket, buffer, MAX_PACKET_SIZE, 0, reinterpret_cast<sockaddr*>(&senderAddr), &senderLen);
 
         if (received > HEADER_SIZE) {
             // Parse header
@@ -157,11 +154,5 @@ void UdpTransport::receiveLoop() {
 }
 
 UdpTransport::Stats UdpTransport::getStats() const {
-    return {
-        m_packetsSent.load(),
-        m_packetsReceived.load(),
-        m_packetsLost.load(),
-        m_seqSend.load(),
-        m_lastSeqReceived.load()
-    };
+    return { m_packetsSent.load(), m_packetsReceived.load(), m_packetsLost.load(), m_seqSend.load(), m_lastSeqReceived.load() };
 }

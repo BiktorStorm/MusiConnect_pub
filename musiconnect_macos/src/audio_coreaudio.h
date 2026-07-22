@@ -10,7 +10,6 @@
 //   - Accept decoded audio for playout via ring buffer
 //
 // Core Audio's AudioUnit render callback runs on a realtime thread.
-// Same constraints as ASIO:
 //   - Never block (no locks, no allocation, no I/O)
 //   - Never take longer than the buffer duration
 //   - Only read/write to lock-free data structures

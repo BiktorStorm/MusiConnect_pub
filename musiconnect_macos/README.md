@@ -5,7 +5,7 @@ Ultra low-latency peer-to-peer audio streaming for real-time music collaboration
 ## Project structure
 
 ```
-asio_app_test_mac/
+musiconnect_macos/
 ├── CMakeLists.txt            — Build system (fetches libopus automatically)
 ├── README.md                 — Build & usage instructions
 └── src/
@@ -31,7 +31,7 @@ brew install cmake       # or download from cmake.org
 ## Build
 
 ```bash
-cd ~/Documents/MusiConnect_pub/asio_app_test_mac
+cd ~/Documents/MusiConnect_pub/musiconnect_macos
 mkdir build && cd build
 cmake ..
 cmake --build . --config Release

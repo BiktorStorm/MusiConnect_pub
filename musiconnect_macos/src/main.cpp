@@ -1,4 +1,3 @@
-// =============================================================================
 // MUSICONNECT — Ultra Low Latency P2P Audio (macOS Native)
 //
 // This ties together:
@@ -9,18 +8,6 @@
 // DATA FLOW:
 //   Core Audio capture callback → CELT encode → UDP send →
 //   → UDP receive → CELT decode → Core Audio playout ring buffer
-//
-// LATENCY BUDGET (localhost):
-//   Capture:  1.33ms (64 samples)
-//   Encode:   ~0.05ms
-//   Network:  ~0.1ms (localhost)
-//   Decode:   ~0.05ms
-//   Playout:  1.33ms (64 samples)
-//   ─────────────────────────
-//   TOTAL:    ~3ms
-//
-// With a real network (LAN): add RTT/2 (~0.5ms LAN, 5-50ms internet)
-// =============================================================================
 
 #include "audio_coreaudio.h"
 #include "celt_codec.h"
@@ -41,20 +28,7 @@ void signalHandler(int) {
 }
 
 void printUsage(const char* argv0) {
-    std::cout << "Usage: " << argv0 << " [options]\n"
-              << "\n"
-              << "Options:\n"
-              << "  --local-port PORT     Local UDP port (default: 4464)\n"
-              << "  --remote-host HOST    Remote peer IP (default: 127.0.0.1)\n"
-              << "  --remote-port PORT    Remote peer port (default: 4465)\n"
-              << "  --buffer-size N       Buffer size in samples (default: 64)\n"
-              << "  --bitrate N           CELT bitrate in bps (default: 64000)\n"
-              << "  --list-devices        List available audio devices and exit\n"
-              << "\n"
-              << "Example (two instances on localhost):\n"
-              << "  Instance A: musiconnect --local-port 4464 --remote-port 4465\n"
-              << "  Instance B: musiconnect --local-port 4465 --remote-port 4464\n"
-              << std::endl;
+    std::cout << "Usage: " << argv0 << " [options]\n" << "\n" << "Options:\n" << "  --local-port PORT     Local UDP port (default: 4464)\n" << "  --remote-host HOST    Remote peer IP (default: 127.0.0.1)\n" << "  --remote-port PORT    Remote peer port (default: 4465)\n" << "  --buffer-size N       Buffer size in samples (default: 64)\n" << "  --bitrate N           CELT bitrate in bps (default: 64000)\n" << "  --list-devices        List available audio devices and exit\n" << "\n" << "Example (two instances on localhost):\n" << "  Instance A: musiconnect --local-port 4464 --remote-port 4465\n" << "  Instance B: musiconnect --local-port 4465 --remote-port 4464\n" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -103,7 +77,7 @@ int main(int argc, char* argv[]) {
     signal(SIGINT, signalHandler);
 
     std::cout << "╔══════════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║  MusiConnect — Ultra Low Latency P2P Audio (macOS)  ║" << std::endl;
+    std::cout << "║                 MusiConnect (macOS)                  ║" << std::endl;
     std::cout << "╚══════════════════════════════════════════════════════╝" << std::endl;
     std::cout << std::endl;
 
@@ -142,8 +116,7 @@ int main(int argc, char* argv[]) {
     // Verify frame sizes match
     int actualBufSize = audio.getActualBufferSize();
     if (actualBufSize != celtConfig.frameSize) {
-        std::cout << "[WARN] Core Audio buffer (" << actualBufSize
-                  << ") != CELT frame size (" << celtConfig.frameSize << ")" << std::endl;
+        std::cout << "[WARN] Core Audio buffer (" << actualBufSize << ") != CELT frame size (" << celtConfig.frameSize << ")" << std::endl;
         std::cout << "       Reinitializing CELT to match Core Audio buffer..." << std::endl;
         celtConfig.frameSize = actualBufSize;
         encoder = CeltCodec();
@@ -213,8 +186,7 @@ int main(int argc, char* argv[]) {
     std::cout << "  RUNNING — Press Ctrl+C to stop" << std::endl;
     std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
     std::cout << "  Core Audio buffer: " << actualBufSize << " samples (" << frameMs << "ms)" << std::endl;
-    std::cout << "  CELT frame:        " << celtConfig.frameSize << " samples ("
-              << encoder.getFrameDurationMs() << "ms)" << std::endl;
+    std::cout << "  CELT frame:        " << celtConfig.frameSize << " samples (" << encoder.getFrameDurationMs() << "ms)" << std::endl;
     std::cout << "  Encoded size:      " << encoder.getEncodedFrameSize() << " bytes/frame" << std::endl;
     std::cout << "  Local:             0.0.0.0:" << netConfig.localPort << std::endl;
     std::cout << "  Remote:            " << netConfig.remoteHost << ":" << netConfig.remotePort << std::endl;
@@ -231,12 +203,7 @@ int main(int argc, char* argv[]) {
         auto audioStats = audio.getStats();
         auto netStats = network.getStats();
 
-        std::cout << "\r[STATS] "
-                  << "Sent: " << netStats.packetsSent
-                  << " | Recv: " << netStats.packetsReceived
-                  << " | Lost: " << netStats.packetsLost
-                  << " | Underruns: " << audioStats.underruns
-                  << "    " << std::flush;
+        std::cout << "\r[STATS] " << "Sent: " << netStats.packetsSent << " | Recv: " << netStats.packetsReceived << " | Lost: " << netStats.packetsLost << " | Underruns: " << audioStats.underruns << "    " << std::flush;
     }
 
     // =========================================================================
