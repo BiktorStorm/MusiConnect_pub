@@ -1,7 +1,7 @@
 # MusiConnect — macOS (Core Audio)
 
-Ultra low-latency peer-to-peer audio streaming for real-time music collaboration on macOS.
-
+Ultra low-latency peer-to-peer audio streaming for real-time music collaboration on macOS. 
+ 
 ## Project structure
 
 ```
@@ -50,30 +50,46 @@ CMake will automatically fetch and build libopus with custom mode support. No ex
 ### Run on localhost (two terminals)
 
 ```bash
-# Terminal A:
-./musiconnect --local-port 4464 --remote-port 4465
+# Terminal A (senderId 0):
+./musiconnect --local-port 4464 --remote-port 4465 --peer 127.0.0.1 --senderId 0
 
-# Terminal B:
-./musiconnect --local-port 4465 --remote-port 4464
+# Terminal B (senderId 1):
+./musiconnect --local-port 4465 --remote-port 4464 --peer 127.0.0.1 --senderId 1
 ```
 
-### Run over LAN
+### Run over LAN (two peers)
 
 ```bash
-# Machine A (192.168.1.10):
-./musiconnect --local-port 4464 --remote-host 192.168.1.20 --remote-port 4464
+# Machine A (192.168.1.10, senderId 0):
+./musiconnect --local-port 4464 --peer 192.168.1.20 --remote-port 4464 --senderId 0
 
-# Machine B (192.168.1.20):
-./musiconnect --local-port 4464 --remote-host 192.168.1.10 --remote-port 4464
+# Machine B (192.168.1.20, senderId 1):
+./musiconnect --local-port 4464 --peer 192.168.1.10 --remote-port 4464 --senderId 1
 ```
+
+### Run over LAN (three peers)
+
+```bash
+# Machine A (192.168.1.10, senderId 0):
+./musiconnect --local-port 4464 --peer 192.168.1.20 --peer 192.168.1.30 --remote-port 4464 --senderId 0
+
+# Machine B (192.168.1.20, senderId 1):
+./musiconnect --local-port 4464 --peer 192.168.1.10 --peer 192.168.1.30 --remote-port 4464 --senderId 1
+
+# Machine C (192.168.1.30, senderId 2):
+./musiconnect --local-port 4464 --peer 192.168.1.10 --peer 192.168.1.20 --remote-port 4464 --senderId 2
+```
+
+Each instance sends its encoded audio to all `--peer` addresses and independently decodes incoming streams from each unique sender ID.
 
 ### All options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--local-port PORT` | 4464 | Local UDP port to bind |
-| `--remote-host HOST` | 127.0.0.1 | Remote peer IP address |
-| `--remote-port PORT` | 4465 | Remote peer UDP port |
+| `--local-port PORT` | 4465 | Local UDP port to bind |
+| `--peer HOST` | *(none)* | Remote peer IP address (repeatable) |
+| `--remote-port PORT` | 4465 | Remote peer UDP port (shared by all peers) |
+| `--senderId N` | 0 | This instance's sender ID (0–255, must be unique per peer) |
 | `--buffer-size N` | 64 | Audio buffer size in samples |
 | `--bitrate N` | 64000 | CELT bitrate in bits/sec |
 | `--list-devices` | — | List audio devices and exit |
@@ -97,11 +113,21 @@ With 64-sample buffers at 48kHz:
 
 Core Audio provides direct hardware access on macOS — no mixer layer or sample rate conversion in the path. This is equivalent to ASIO on Windows.
 
+Adding more peers does not increase latency — the encoder runs once regardless of peer count, and each peer's decoder runs independently.
+
+## Packet format
+
+```
+[0..3]  uint32_t  sequence number (per-sender, for loss detection)
+[4]     uint8_t   sender ID (identifies which peer sent the packet)
+[5..N]  bytes     CELT encoded audio payload
+```
+
 ## Cross-platform compatibility
 
 This macOS version is wire-compatible with the Windows ASIO version. Both use:
 - The same CELT codec configuration (64-sample frames, 64kbps CBR)
-- The same UDP packet format (4-byte sequence header + CELT payload)
+- The same UDP packet format (4-byte sequence + 1-byte sender ID + CELT payload)
 - The same sample rate (48kHz)
 
 A macOS instance can stream to/from a Windows instance with no changes.
