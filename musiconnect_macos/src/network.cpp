@@ -5,7 +5,7 @@
 // Optimized for minimum latency:
 //   - No Nagle algorithm (irrelevant for UDP but SO_SNDBUF minimized)
 //   - Non-blocking receive with tight poll loop
-//   - Minimal packet header (4 bytes sequence number)
+//   - Minimal packet header (4 bytes sequence number + 1 byte sender ID)
 // =============================================================================
 
 #include "network.h"
@@ -19,8 +19,8 @@
 #include <fcntl.h>
 #include <poll.h>
 
-// Packet header: just a sequence number (4 bytes)
-static constexpr int HEADER_SIZE = 4;
+// Packet header: just a sequence number (5 bytes)
+static constexpr int HEADER_SIZE = 5;
 static constexpr int MAX_PACKET_SIZE = 512;  // More than enough for one CELT frame
 
 UdpTransport::UdpTransport() = default;
@@ -61,7 +61,11 @@ bool UdpTransport::init(const NetworkConfig& config) {
     setsockopt(m_socket, SOL_SOCKET, SO_SNDBUF, &bufSize, sizeof(bufSize));
     setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, &bufSize, sizeof(bufSize));
 
-    std::cout << "[NET] Bound to port " << config.localPort << ", remote: " << config.remoteHost << ":" << config.remotePort << std::endl;
+    std::cout << "[NET] Bound to port " << config.localPort << ", remote ports: [";
+    for(const auto& port : config.peers) {
+        std::cout << port << ", ";
+    }
+    std::cout << "]" << config.remotePort << std::endl;
 
     return true;
 }
@@ -88,27 +92,29 @@ void UdpTransport::stop() {
 bool UdpTransport::send(const uint8_t* data, int length) {
     if (m_socket == -1 || length <= 0) return false;
 
-    // Build packet: [4-byte sequence][payload]
+    // Build packet: [4-byte sequence][1 byte sender ID][payload]
     uint8_t packet[MAX_PACKET_SIZE];
     if (length + HEADER_SIZE > MAX_PACKET_SIZE) return false;
 
     uint32_t seq = m_seqSend.fetch_add(1, std::memory_order_relaxed);
     memcpy(packet, &seq, 4);
+    memcpy(packet + 4, &m_config.senderId, 1);
     memcpy(packet + HEADER_SIZE, data, length);
 
-    // Send to remote peer
-    sockaddr_in remoteAddr{};
-    remoteAddr.sin_family = AF_INET;
-    remoteAddr.sin_port = htons(m_config.remotePort);
-    inet_pton(AF_INET, m_config.remoteHost.c_str(), &remoteAddr.sin_addr);
+    // Send to remote peers
+    for(const auto& ip : m_config.peers) {
+        sockaddr_in remoteAddr{};
+        remoteAddr.sin_family = AF_INET;
+        remoteAddr.sin_port = htons(m_config.remotePort);
+        inet_pton(AF_INET, ip.c_str(), &remoteAddr.sin_addr);
 
-    ssize_t sent = sendto(m_socket, packet, length + HEADER_SIZE, 0, reinterpret_cast<sockaddr*>(&remoteAddr), sizeof(remoteAddr));
-
-    if (sent > 0) {
+        ssize_t sent = sendto(m_socket, packet, length + HEADER_SIZE, 0, reinterpret_cast<sockaddr*>(&remoteAddr), sizeof(remoteAddr));
+        if (sent <= 0) {
+            return false;
+        }
         m_packetsSent.fetch_add(1, std::memory_order_relaxed);
-        return true;
     }
-    return false;
+    return true;
 }
 
 void UdpTransport::setReceiveCallback(PacketCallback cb) {
@@ -135,24 +141,26 @@ void UdpTransport::receiveLoop() {
             // Parse header
             uint32_t seq;
             memcpy(&seq, buffer, 4);
-
+            uint8_t id;
+            memcpy(&id, buffer + 4, 1);
             // Detect packet loss (sequence gaps)
-            uint32_t lastSeq = m_lastSeqReceived.load(std::memory_order_relaxed);
+
+            uint32_t& lastSeq = m_lastSeqReceived[id];
             if (seq > lastSeq + 1 && lastSeq > 0) {
                 uint32_t lost = seq - lastSeq - 1;
                 m_packetsLost.fetch_add(lost, std::memory_order_relaxed);
             }
-            m_lastSeqReceived.store(seq, std::memory_order_relaxed);
+            lastSeq = seq;
             m_packetsReceived.fetch_add(1, std::memory_order_relaxed);
 
             // Deliver payload to callback
             if (m_callback) {
-                m_callback(buffer + HEADER_SIZE, (int)(received - HEADER_SIZE), seq);
+                m_callback(buffer + HEADER_SIZE, (int)(received - HEADER_SIZE), seq, id);
             }
         }
     }
 }
 
 UdpTransport::Stats UdpTransport::getStats() const {
-    return { m_packetsSent.load(), m_packetsReceived.load(), m_packetsLost.load(), m_seqSend.load(), m_lastSeqReceived.load() };
+    return { m_packetsSent.load(), m_packetsReceived.load(), m_packetsLost.load()};
 }

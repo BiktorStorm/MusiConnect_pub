@@ -64,6 +64,7 @@ bool CeltCodec::init(const CeltConfig& config) {
 
     std::cout << "[CELT] Initialized: " << config.frameSize << " samples/frame (" << getFrameDurationMs() << "ms), " << config.bitrate / 1000 << "kbps, " << m_encodedFrameSize << " bytes/frame, " << "complexity=" << config.complexity << std::endl;
 
+    m_initialized = true;
     return true;
 }
 

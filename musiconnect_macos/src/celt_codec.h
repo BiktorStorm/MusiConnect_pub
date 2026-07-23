@@ -54,10 +54,14 @@ public:
         return (double)m_config.frameSize / m_config.sampleRate * 1000.0;
     }
 
+    // Check if codec is initialized
+    bool isInitialized() const { return m_initialized; }
+
     // Get expected encoded frame size in bytes (CBR = constant)
     int getEncodedFrameSize() const { return m_encodedFrameSize; }
 
 private:
+    bool m_initialized = false;
     CeltConfig m_config;
     void* m_mode = nullptr;
     void* m_encoder = nullptr;

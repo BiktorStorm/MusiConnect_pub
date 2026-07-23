@@ -12,7 +12,8 @@
 //
 // Packet format:
 //   [0..3]  uint32_t sequence number (for loss detection, not reordering)
-//   [4..N]  encoded audio frame (CELT payload)
+//   [4]   uint8_t  sender ID (0-255)
+//   [5..N]  encoded audio frame (CELT payload)
 //
 // NAT Traversal (hole punching):
 //   Both peers send packets to each other's public IP:port.
@@ -25,15 +26,18 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <unordered_map>
+#include <vector>
 
 // Callback: called when an audio packet arrives
-// Parameters: encoded data pointer, data length, sequence number
-using PacketCallback = std::function<void(const uint8_t*, int, uint32_t)>;
+// Parameters: encoded data pointer, data length, sequence number, remote sender ID
+using PacketCallback = std::function<void(const uint8_t*, int, uint32_t, uint8_t)>;
 
 struct NetworkConfig {
-    uint16_t localPort = 4464;           // Port to bind to
-    std::string remoteHost = "127.0.0.1"; // Peer's IP address
+    uint16_t localPort = 4465;           // Port to bind to
+    std::vector<std::string> peers = {}; // Peer's IP addresses
     uint16_t remotePort = 4465;           // Peer's port
+    uint8_t senderId = 0;                 // User's sender ID (0-255)
 };
 
 class UdpTransport {
@@ -61,8 +65,6 @@ public:
         uint64_t packetsSent = 0;
         uint64_t packetsReceived = 0;
         uint64_t packetsLost = 0;       // Detected via sequence gaps
-        uint32_t lastSeqSent = 0;
-        uint32_t lastSeqReceived = 0;
     };
     Stats getStats() const;
 
@@ -81,5 +83,5 @@ private:
     std::atomic<uint64_t> m_packetsReceived{0};
     std::atomic<uint64_t> m_packetsLost{0};
     std::atomic<uint32_t> m_seqSend{0};
-    std::atomic<uint32_t> m_lastSeqReceived{0};
+    std::unordered_map<uint8_t, uint32_t> m_lastSeqReceived;
 };
