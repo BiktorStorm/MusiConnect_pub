@@ -9,7 +9,14 @@ audio**, so it adds **zero latency** to the jam. Once the peers have hole-punche
 a direct UDP path, `audio_transceiver_p2p` reuses that NAT mapping and streams
 PCM audio straight between the two clients.
 
-See `PROTOCOL.md` for the full wire protocol and the reasoning behind it.
+The signaling server ships in **two languages**: the original C++
+(`signaling_server.cpp`) and a Python port (`signaling_server_python.py`) that
+speaks the exact same wire protocol — pick whichever you prefer to run. There is
+also a **multi-peer** Python server (`signaling_server_multipeer.py`) for
+full-mesh rooms of more than two peers.
+
+See `PROTOCOL.md` for the full wire protocol and the reasoning behind it, and
+`SIGNALING_PYTHON.md` for details on the Python servers.
 
 ## How it works
 
@@ -29,6 +36,10 @@ See `PROTOCOL.md` for the full wire protocol and the reasoning behind it.
 | `PROTOCOL.md` | Wire protocol + design rationale (read this first) |
 | `signaling_protocol.h` | Shared constants, cross-platform socket glue, (de)serialization |
 | `signaling_server.cpp` | The rendezvous server (host this on a public IP) |
+| `signaling_server_python.py` | Python port of the server (1:1, protocol v1); drop-in replacement |
+| `signaling_server_multipeer.py` | Python multi-peer server (protocol v2, sender-ID aware) |
+| `multipeer_test_client.py` | Signaling-only test client for the multi-peer server |
+| `SIGNALING_PYTHON.md` | Documentation for the Python servers + test client |
 | `signaling_client.h/.cpp` | Client: register → wait for peer → hole punch → resolved endpoint |
 | `audio_transceiver_p2p.cpp` | **Full P2P audio transceiver**: signaling + hole punch + live audio (PortAudio) |
 | `demo_client.cpp` | Minimal demo: resolve a peer and print the handoff (no audio) |
@@ -36,7 +47,11 @@ See `PROTOCOL.md` for the full wire protocol and the reasoning behind it.
 
 ## Prerequisites
 
-- A C++17 compiler (MSVC, MinGW-w64, g++, or clang++).
+- A C++17 compiler (MSVC, MinGW-w64, g++, or clang++) — for the C++ server and
+  the audio transceiver.
+- **Python 3.6+** — only if you want to run the Python signaling servers
+  (`signaling_server_python.py` / `signaling_server_multipeer.py`). They use the
+  standard library only, so there is nothing to install and nothing to build.
 - **PortAudio** — required only for `audio_transceiver_p2p` (the server and
   `demo_client` have no audio dependency).
   - Windows (MSYS2/MinGW): `pacman -S mingw-w64-x86_64-portaudio`
@@ -70,6 +85,22 @@ cl /std:c++17 /EHsc signaling_server.cpp ws2_32.lib
 # Windows (MinGW)
 g++ -std=c++17 -O2 signaling_server.cpp -o signaling_server.exe -lws2_32
 ```
+
+### The Python signaling server (no build step)
+
+The Python servers need no compilation — they run directly on Python 3.6+ with
+only the standard library:
+
+```
+python signaling_server_python.py            # 1:1 server (protocol v1)
+python signaling_server_multipeer.py          # multi-peer server (protocol v2)
+```
+
+`signaling_server_python.py` is a byte-for-byte port of `signaling_server.cpp`,
+so the existing C++ clients connect to it unchanged. `signaling_server_multipeer.py`
+supports full-mesh rooms and a sender-ID protocol extension (v2) — it needs v2
+clients. See `SIGNALING_PYTHON.md` for the wire-format details and the test
+client.
 
 ### The P2P audio transceiver (`audio_transceiver_p2p`)
 
@@ -107,6 +138,14 @@ PortAudio installation.
 
 For a real internet test this must be a host with a public IP (e.g. a VPS) with
 UDP 5000 open in the firewall. For LAN testing, any machine on the network works.
+
+You can run the Python server instead of the C++ one — it listens the same way
+and takes the same optional port argument:
+
+```
+python signaling_server_python.py 5000        # 1:1 (protocol v1)
+python signaling_server_multipeer.py 5000      # multi-peer (protocol v2)
+```
 
 ### 2. Run the transceiver on both peers with the SAME room code
 
