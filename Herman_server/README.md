@@ -52,7 +52,7 @@ The server has no audio dependencies and builds with CMake:
 ```
 cd Herman_testar_göra_server
 cmake -B build
-cmake --build build --config Release
+cmake --build build
 ```
 
 This produces `signaling_server` (and `demo_client`) in `build/` or
