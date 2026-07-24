@@ -355,8 +355,25 @@ def main(argv):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.bind(("0.0.0.0", port))
-    except OSError:
-        sys.stderr.write("Failed to bind on UDP port %u\n" % port)
+    except OSError as e:
+        # Surface the real reason instead of a generic message. The winerror /
+        # errno tells us exactly what to fix.
+        sys.stderr.write("Failed to bind on UDP port %u: %s\n" % (port, e))
+        win = getattr(e, "winerror", None)
+        if win == 10048 or e.errno == 98:          # WSAEADDRINUSE / EADDRINUSE
+            sys.stderr.write(
+                "  Port %u is already in use. Another instance (or the C++\n"
+                "  signaling_server) may still be running, or another app owns it.\n"
+                "  Pick a different port:  python signaling_server_python.py 5001\n"
+                % port)
+        elif win == 10013 or e.errno == 13:        # WSAEACCES / EACCES
+            sys.stderr.write(
+                "  Access denied. On Windows this often means the port falls in a\n"
+                "  reserved/excluded range (Hyper-V, WSL, Docker reserve dynamic\n"
+                "  ranges that can include 5000). Check with:\n"
+                "    netsh int ipv4 show excludedportrange protocol=udp\n"
+                "  Then either pick a port outside those ranges, e.g.:\n"
+                "    python signaling_server_python.py 5001\n")
         sock.close()
         return 1
 
